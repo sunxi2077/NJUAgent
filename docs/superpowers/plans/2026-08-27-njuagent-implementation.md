@@ -513,19 +513,19 @@ Commit as `feat: assemble runnable coding agent CLI`.
 **Interfaces:**
 - Exercises the real history, runner, registry, executor, workspace, file tools, search tools, and command tool with only the provider scripted.
 
-- [ ] **Step 1: Write the failing end-to-end test**
+- [x] **Step 1: Write the failing end-to-end test**
 
 Script the model to list/read, edit, run a failing test, inspect output, edit again, run a passing test, and finish. Copy the demo fixture to a temporary workspace and assert the final file content, command exit records, event order, valid history, and `completed` status.
 
-- [ ] **Step 2: Verify RED and correct the first exposed integration gap**
+- [x] **Step 2: Verify RED and correct the first exposed integration gap**
 
 Run: `npm test -- tests/integration/agent.test.ts`. The expected first failure must identify an actual missing integration rather than a malformed fixture.
 
-- [ ] **Step 3: Implement only the required integration corrections**
+- [x] **Step 3: Implement only the required integration corrections**
 
 Keep corrections in the owning production modules; do not add test-only branches.
 
-- [ ] **Step 4: Verify GREEN, full quality gates, and commit**
+- [x] **Step 4: Verify GREEN, full quality gates, and commit**
 
 Run `npm test`, `npm run typecheck`, and `npm run build`; commit as `test: verify offline coding-agent workflow`.
 
