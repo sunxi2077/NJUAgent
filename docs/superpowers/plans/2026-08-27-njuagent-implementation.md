@@ -105,11 +105,11 @@ export type PermissionDecision =
 **Interfaces:**
 - Produces: `Message`, `UserBlock`, `AssistantBlock`, `AssistantMessage`, `assertValidHistory(messages: readonly Message[]): void`.
 
-- [ ] **Step 1: Initialize Git and the TypeScript test scaffold**
+- [x] **Step 1: Initialize Git and the TypeScript test scaffold**
 
 Use `git init`, create strict ESM configuration, and define scripts `build`, `test`, `test:watch`, `typecheck`, `start`, and `dev`. Install the dependency set from the Tech Stack.
 
-- [ ] **Step 2: Write the failing message-invariant test**
+- [x] **Step 2: Write the failing message-invariant test**
 
 ```ts
 import { describe, expect, test } from "vitest";
@@ -126,16 +126,16 @@ describe("assertValidHistory", () => {
 });
 ```
 
-- [ ] **Step 3: Run the test and verify RED**
+- [x] **Step 3: Run the test and verify RED**
 
 Run: `npm test -- tests/unit/agent/messages.test.ts`  
 Expected: FAIL because `src/agent/messages.ts` does not exist.
 
-- [ ] **Step 4: Implement the message unions and invariant**
+- [x] **Step 4: Implement the message unions and invariant**
 
 The function must allow text-only user messages, require tool results to immediately follow an assistant tool-call batch, reject duplicate/missing IDs, and accept results in the same order as calls.
 
-- [ ] **Step 5: Add success and duplicate-ID cases, then verify GREEN**
+- [x] **Step 5: Add success and duplicate-ID cases, then verify GREEN**
 
 Run: `npm test -- tests/unit/agent/messages.test.ts`  
 Expected: all message tests PASS.
