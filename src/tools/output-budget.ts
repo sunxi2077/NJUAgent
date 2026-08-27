@@ -25,7 +25,6 @@ export function truncateUtf8(text: string, maxBytes: number): TruncatedText {
   if (source.length <= maxBytes) {
     return { text, truncated: false, omittedBytes: 0 };
   }
-
   const largestMarker = `\n... [${source.length} bytes omitted] ...\n`;
   const available = maxBytes - Buffer.byteLength(largestMarker);
   if (available <= 0) {
@@ -46,4 +45,10 @@ export function truncateUtf8(text: string, maxBytes: number): TruncatedText {
     truncated: true,
     omittedBytes,
   };
+}
+
+/** Returns the longest UTF-8-safe prefix of `text` that fits in `maxBytes`. */
+export function takeUtf8Prefix(text: string, maxBytes: number): string {
+  const source = Buffer.from(text, "utf8");
+  return utf8Head(source, maxBytes).toString("utf8");
 }

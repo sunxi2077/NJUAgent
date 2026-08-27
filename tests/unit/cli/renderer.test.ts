@@ -51,10 +51,42 @@ describe("TerminalRenderer in plain (non-TTY) mode", () => {
     renderer.handle({ type: "model_started", step: 1 });
     renderer.handle({ type: "text_delta", text: "hello\nworld" });
     renderer.handle({ type: "text_delta", text: "!" });
+    renderer.handle({ type: "model_completed", stopReason: "end_turn" });
 
     expect(stdout.text()).toContain("[model] step 1 started\n");
-    expect(stdout.text()).toContain("[model] hello\n[model] world\n[model] !\n");
+    // Complete lines are emitted during streaming; a trailing partial line is
+    // flushed at completion, so "world" + "!" reconstructs as "world!".
+    expect(stdout.text()).toContain("[model] hello\n[model] world!\n");
     expect(stdout.text()).not.toContain("\x1b[");
+  });
+
+  test("reassembles fragmented non-TTY model deltas", () => {
+    const stdout = new MemoryStdout();
+    const renderer = new TerminalRenderer({ stdout, isTTY: false });
+    renderer.handle({ type: "text_delta", text: "hel" });
+    renderer.handle({ type: "text_delta", text: "lo\nwor" });
+    renderer.handle({ type: "text_delta", text: "ld" });
+    renderer.handle({ type: "model_completed", stopReason: "end_turn" });
+
+    expect(stdout.text()).toContain("[model] hello\n[model] world\n");
+    expect(stdout.text()).not.toContain("[model] hel\n");
+  });
+
+  test("suppresses live tool output after the per-call budget", () => {
+    const stdout = new MemoryStdout();
+    const renderer = new TerminalRenderer({
+      stdout,
+      isTTY: false,
+      maxLiveOutputBytes: 5,
+    });
+    renderer.toolOutput(toolCall, "stdout", "abc");
+    renderer.toolOutput(toolCall, "stdout", "defgh");
+    renderer.toolOutput(toolCall, "stdout", "ignored");
+
+    expect(stdout.text()).toContain("abc");
+    expect(stdout.text()).toContain("de");
+    expect(stdout.text().match(/live output suppressed/gu)).toHaveLength(1);
+    expect(stdout.text()).not.toContain("ignored");
   });
 
   test("renders usage, model completion, and retry records", () => {

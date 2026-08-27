@@ -34,6 +34,7 @@ describe("loadConfig", () => {
     expect(config.maxSteps).toBe(20);
     expect(config.commandTimeoutMs).toBe(120000);
     expect(config.toolOutputMaxBytes).toBe(32768);
+    expect(config.uiOutputMaxBytes).toBe(65536);
     expect(config.maxTokens).toBe(4096);
     expect(config.permissionMode).toBe("balanced");
     expect(config.debug).toBe(false);
@@ -47,6 +48,7 @@ describe("loadConfig", () => {
         AGENT_MAX_STEPS: "5",
         COMMAND_TIMEOUT_MS: "3000",
         TOOL_OUTPUT_MAX_BYTES: "1024",
+        UI_OUTPUT_MAX_BYTES: "2048",
         AGENT_MAX_TOKENS: "2048",
       },
       [],
@@ -54,12 +56,16 @@ describe("loadConfig", () => {
     expect(config.maxSteps).toBe(5);
     expect(config.commandTimeoutMs).toBe(3000);
     expect(config.toolOutputMaxBytes).toBe(1024);
+    expect(config.uiOutputMaxBytes).toBe(2048);
     expect(config.maxTokens).toBe(2048);
   });
 
   test("rejects zero, negative, and non-numeric numeric settings", () => {
     for (const bad of ["0", "-1", "abc", "1.5"]) {
       expect(() => loadConfig({ ...validEnv, AGENT_MAX_STEPS: bad }, [])).toThrow(
+        ConfigError,
+      );
+      expect(() => loadConfig({ ...validEnv, UI_OUTPUT_MAX_BYTES: bad }, [])).toThrow(
         ConfigError,
       );
     }

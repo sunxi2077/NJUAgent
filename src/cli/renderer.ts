@@ -3,6 +3,7 @@ import pc from "picocolors";
 import type { AgentEvent } from "../agent/events.js";
 import type { RunResult } from "../agent/result.js";
 import type { ToolExecutionRequest, ToolOutputStream } from "../tools/tool.js";
+import { LiveOutputLimiter } from "./output-limiter.js";
 
 export interface Renderer {
   handle(event: AgentEvent): void;
@@ -23,9 +24,12 @@ export type TerminalRendererOptions = {
   isTTY: boolean;
   /** Force fully plain output even on a TTY (e.g. NO_COLOR). */
   noColor?: boolean;
+  /** Per-tool-call live terminal output budget in bytes. */
+  maxLiveOutputBytes?: number;
 };
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const DEFAULT_MAX_LIVE_OUTPUT_BYTES = 65_536;
 
 function envNoColor(): boolean {
   const value = process.env.NO_COLOR;
@@ -36,14 +40,20 @@ export class TerminalRenderer implements Renderer {
   readonly #stdout: TextWriter;
   /** Interactive rendering: colors, spinner and transient status line. */
   readonly #interactive: boolean;
+  readonly #liveOutputLimiter: LiveOutputLimiter;
+  readonly #liveOutputLimit: number;
   #transient = "";
   /** Whether streamed model text is on screen without a trailing newline. */
   #streamingText = false;
+  /** Partial plain-mode model line waiting for a newline or completion. */
+  #plainModelBuffer = "";
   #spinnerIndex = 0;
 
   constructor(options: TerminalRendererOptions) {
     this.#stdout = options.stdout;
     this.#interactive = options.isTTY && !(options.noColor ?? envNoColor());
+    this.#liveOutputLimit = options.maxLiveOutputBytes ?? DEFAULT_MAX_LIVE_OUTPUT_BYTES;
+    this.#liveOutputLimiter = new LiveOutputLimiter(this.#liveOutputLimit);
   }
 
   handle(event: AgentEvent): void {
@@ -66,7 +76,7 @@ export class TerminalRenderer implements Renderer {
           this.#stdout.write(event.text);
           this.#streamingText = true;
         } else {
-          this.#plainLines("[model]", event.text);
+          this.#writePlainModelDelta(event.text);
         }
         break;
       case "usage":
@@ -78,6 +88,7 @@ export class TerminalRenderer implements Renderer {
         break;
       case "model_completed":
         this.#flushStreamingText();
+        this.#flushPlainModelText();
         if (this.#interactive) {
           this.#status(`${pc.green("✓")} model completed (${event.stopReason})`);
         } else {
@@ -105,6 +116,7 @@ export class TerminalRenderer implements Renderer {
         }
         break;
       case "tool_completed":
+        this.#liveOutputLimiter.finish(event.id);
         if (this.#interactive) {
           const mark = event.ok ? pc.green("✓") : pc.red("✗");
           const name = event.ok ? event.name : pc.red(event.name);
@@ -119,28 +131,41 @@ export class TerminalRenderer implements Renderer {
         break;
       case "run_finished":
         this.#flushStreamingText();
+        this.#flushPlainModelText();
         this.#renderRunResult(event.result);
         break;
     }
   }
 
   toolOutput(
-    _call: ToolExecutionRequest,
+    call: ToolExecutionRequest,
     stream: ToolOutputStream,
     text: string,
   ): void {
     if (text.length === 0) {
       return;
     }
+    const limited = this.#liveOutputLimiter.consume(call.id, text);
+    if (limited.suppressionStarted) {
+      const message = `[output] live output suppressed after ${this.#liveOutputLimit} bytes`;
+      if (this.#interactive) {
+        this.#permanent(pc.dim(message));
+      } else {
+        this.#write(`${message}\n`);
+      }
+    }
+    if (limited.text.length === 0) {
+      return;
+    }
     if (this.#interactive) {
-      for (const line of text.split("\n")) {
+      for (const line of limited.text.split("\n")) {
         if (line !== "") {
           this.#permanent(stream === "stderr" ? pc.red(line) : line);
         }
       }
       return;
     }
-    this.#plainLines(`[${stream}]`, text);
+    this.#plainLines(`[${stream}]`, limited.text);
   }
 
   error(message: string): void {
@@ -229,6 +254,26 @@ export class TerminalRenderer implements Renderer {
   #plainLines(prefix: string, text: string): void {
     for (const line of text.split("\n")) {
       this.#write(`${prefix} ${line}\n`);
+    }
+  }
+
+  /** Buffers plain-mode model deltas and emits only complete lines. */
+  #writePlainModelDelta(text: string): void {
+    this.#plainModelBuffer += text;
+    let newline = this.#plainModelBuffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = this.#plainModelBuffer.slice(0, newline);
+      this.#write(`[model] ${line}\n`);
+      this.#plainModelBuffer = this.#plainModelBuffer.slice(newline + 1);
+      newline = this.#plainModelBuffer.indexOf("\n");
+    }
+  }
+
+  /** Flushes a trailing partial plain-mode model line at completion. */
+  #flushPlainModelText(): void {
+    if (this.#plainModelBuffer !== "") {
+      this.#write(`[model] ${this.#plainModelBuffer}\n`);
+      this.#plainModelBuffer = "";
     }
   }
 

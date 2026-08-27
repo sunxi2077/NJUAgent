@@ -8,6 +8,7 @@ export type AppConfig = {
   maxSteps: number;
   commandTimeoutMs: number;
   toolOutputMaxBytes: number;
+  uiOutputMaxBytes: number;
   workspaceRoot: string;
   permissionMode: PermissionMode;
   debug: boolean;
@@ -23,6 +24,7 @@ const NUMERIC_DEFAULTS = {
   AGENT_MAX_STEPS: 20,
   COMMAND_TIMEOUT_MS: 120_000,
   TOOL_OUTPUT_MAX_BYTES: 32_768,
+  UI_OUTPUT_MAX_BYTES: 65_536,
   AGENT_MAX_TOKENS: 4_096,
 } as const;
 
@@ -134,6 +136,11 @@ export function loadConfig(env: NodeJS.ProcessEnv, argv: readonly string[]): App
       env,
       "TOOL_OUTPUT_MAX_BYTES",
       NUMERIC_DEFAULTS.TOOL_OUTPUT_MAX_BYTES,
+    ),
+    uiOutputMaxBytes: readPositiveInt(
+      env,
+      "UI_OUTPUT_MAX_BYTES",
+      NUMERIC_DEFAULTS.UI_OUTPUT_MAX_BYTES,
     ),
     workspaceRoot: args.workspaceRoot ?? process.cwd(),
     permissionMode: args.permissionMode ?? "balanced",

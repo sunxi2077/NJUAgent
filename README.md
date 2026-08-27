@@ -30,6 +30,7 @@ All configuration comes from environment variables; the only supported CLI flags
 | `AGENT_MAX_TOKENS` | no | `4096` | `max_tokens` sent to the model |
 | `COMMAND_TIMEOUT_MS` | no | `120000` | default `run_command` timeout |
 | `TOOL_OUTPUT_MAX_BYTES` | no | `32768` | max tool output returned to the model |
+| `UI_OUTPUT_MAX_BYTES` | no | `65536` | maximum command output shown live per tool call |
 
 ## Usage
 

@@ -113,6 +113,7 @@ async function main(): Promise<void> {
   const renderer = new TerminalRenderer({
     stdout: process.stdout,
     isTTY: process.stdout.isTTY === true,
+    maxLiveOutputBytes: config.uiOutputMaxBytes,
   });
   const prompt = new ReadlinePrompt({
     input: process.stdin,
