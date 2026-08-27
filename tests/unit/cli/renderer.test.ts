@@ -176,6 +176,37 @@ describe("TerminalRenderer in TTY mode", () => {
     // The transient status line should be redrawn after a permanent write.
     expect(text).toContain("\r\x1b[K");
   });
+
+  test("writes text deltas incrementally before the turn completes", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "hel" });
+    renderer.handle({ type: "text_delta", text: "lo" });
+
+    // The streamed reply is already on screen without waiting for completion.
+    expect(stdout.text()).toContain("hello");
+  });
+
+  test("completes the streamed text line before rendering a tool card", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "reading now" });
+    renderer.handle({ type: "model_completed", stopReason: "tool_use" });
+    renderer.handle({
+      type: "tool_started",
+      id: "c1",
+      name: "read_file",
+      summary: '{"path":"a.ts"}',
+    });
+
+    const text = stdout.text();
+    expect(text).toContain("reading now\n");
+    expect(text).toContain("read_file");
+  });
 });
 
 describe("TerminalRenderer tool output", () => {

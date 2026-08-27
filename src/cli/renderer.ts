@@ -37,7 +37,8 @@ export class TerminalRenderer implements Renderer {
   /** Interactive rendering: colors, spinner and transient status line. */
   readonly #interactive: boolean;
   #transient = "";
-  #modelBuffer = "";
+  /** Whether streamed model text is on screen without a trailing newline. */
+  #streamingText = false;
   #spinnerIndex = 0;
 
   constructor(options: TerminalRendererOptions) {
@@ -48,7 +49,6 @@ export class TerminalRenderer implements Renderer {
   handle(event: AgentEvent): void {
     switch (event.type) {
       case "model_started":
-        this.#modelBuffer = "";
         if (this.#interactive) {
           this.#status(`model step ${event.step}…`);
         } else {
@@ -57,8 +57,14 @@ export class TerminalRenderer implements Renderer {
         break;
       case "text_delta":
         if (this.#interactive) {
-          this.#modelBuffer += event.text;
-          this.#status(this.#tail(event.text));
+          // Stream text inline as it arrives so the reply visibly grows
+          // instead of jumping into the scrollback only at completion.
+          if (this.#transient !== "") {
+            this.#clearLine();
+            this.#transient = "";
+          }
+          this.#stdout.write(event.text);
+          this.#streamingText = true;
         } else {
           this.#plainLines("[model]", event.text);
         }
@@ -71,7 +77,7 @@ export class TerminalRenderer implements Renderer {
         }
         break;
       case "model_completed":
-        this.#flushModelText();
+        this.#flushStreamingText();
         if (this.#interactive) {
           this.#status(`${pc.green("✓")} model completed (${event.stopReason})`);
         } else {
@@ -88,7 +94,7 @@ export class TerminalRenderer implements Renderer {
         }
         break;
       case "tool_started":
-        this.#flushModelText();
+        this.#flushStreamingText();
         if (this.#interactive) {
           this.#permanent(
             `${pc.cyan(`⚙ ${event.name}`)} ${pc.dim(event.summary)} (${event.id})`,
@@ -112,7 +118,7 @@ export class TerminalRenderer implements Renderer {
         }
         break;
       case "run_finished":
-        this.#flushModelText();
+        this.#flushStreamingText();
         this.#renderRunResult(event.result);
         break;
     }
@@ -178,25 +184,19 @@ export class TerminalRenderer implements Renderer {
     }
   }
 
-  #flushModelText(): void {
-    if (this.#modelBuffer === "") {
-      return;
+  /** Completes an in-progress streamed text line so the next write starts fresh. */
+  #flushStreamingText(): void {
+    if (this.#streamingText) {
+      this.#stdout.write("\n");
+      this.#streamingText = false;
     }
-    if (this.#interactive) {
-      this.#permanent(this.#modelBuffer);
-    }
-    this.#modelBuffer = "";
-  }
-
-  #tail(text: string): string {
-    const last = text.split("\n").at(-1) ?? "";
-    return last.length > 80 ? `…${last.slice(-80)}` : last;
   }
 
   #status(text: string): void {
     if (!this.#interactive) {
       return;
     }
+    this.#flushStreamingText();
     this.#transient = text;
     this.#clearLine();
     if (text === "") {
@@ -212,6 +212,7 @@ export class TerminalRenderer implements Renderer {
   }
 
   #permanent(text: string): void {
+    this.#flushStreamingText();
     if (this.#transient !== "") {
       this.#clearLine();
     }
