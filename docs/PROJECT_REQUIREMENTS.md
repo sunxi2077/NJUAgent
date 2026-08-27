@@ -273,25 +273,28 @@ CLI
 
 这些记录既服务于实现，也直接用于视频讲解和面试答辩。逐项说明见 `docs/superpowers/specs/2026-08-27-njuagent-design.md`（第 3、4、8、10、11、14、15、19 节）与仓库 `README.md` 的架构、安全模型和局限性章节。
 
-## 10. 验收审计记录（2026-08-27）
+## 10. 验收审计记录（2026-08-27；2026-08-28 阶段一收尾复核）
 
-本次审计依据当前提交（`feat/agent-implementation` 分支 HEAD）逐项核对；未勾选项均为外部交付或明确未实现项。
+审计依据 `fix/stage-one-hardening` 分支 HEAD（含阶段一收尾的六个提交）逐项核对；未勾选项均为外部交付或明确未实现项。
 
 ### 已勾选项的支撑证据
 
-- 实现约束、MVP 功能、阶段 A–C：源码与测试见 `src/`、`tests/`；`npm test` 114 项通过，`npm run typecheck`、`npm run build` 通过。
+- 实现约束、MVP 功能、阶段 A–C：源码与测试见 `src/`、`tests/`；`npm test` 全量离线单元与集成测试通过，`npm run typecheck`、`npm run build` 通过（数量以最新一次运行为准，避免文档过期）。
 - 主循环、工具、消息配对、权限、路径边界、重试、上下文压缩：对应单元测试 `tests/unit/`。
 - 端到端闭环（列目录 → 读文件 → 编辑 → 测试失败 → 修复 → 测试通过）：`tests/integration/agent.test.ts` + `tests/fixtures/demo-project`，全部离线、无需真实 API Key。
-- 命令行交互、TTY/非 TTY 渲染、Ctrl-C 语义、session ID、工具调用参数展示：`src/cli/`、`src/index.ts` 与 `tests/unit/cli/`。
-- 配置校验与可执行入口：`src/config.ts`、`src/index.ts`；无模型变量时输出可操作错误并退出码 1。
-- 冒烟测试：`tests/smoke/anthropic-api.smoke.ts`，`npm run test:smoke`；缺少凭据时跳过（退出码 0）。
-- 凭据安全：`.gitignore` 排除 `.env`、日志与密钥类文件；全仓库扫描未发现真实凭据；`.env.example` 仅为占位。
+- 命令行交互、TTY/非 TTY 渲染、Ctrl-C 语义、session ID、工具调用参数展示、非 TTY 流式文本重组与实时输出限额：`src/cli/`、`src/index.ts` 与 `tests/unit/cli/`。
+- 配置校验与可执行入口：`src/config.ts`、`src/index.ts`；无模型变量时输出可操作错误并退出码 1；`--help`/`-h` 无需凭据即可运行并退出 0；可执行文件首行为 Node shebang。
+- 子进程环境隔离：`src/security/command-environment.ts` 以白名单方式构造命令环境，模型凭据与无关父进程变量（如 `DATABASE_URL`）不会进入子进程；回归测试见 `tests/unit/security/command-environment.test.ts` 与 `tests/unit/tools/command-tool.test.ts`。
+- 命令权限保守化：`src/security/permission-policy.ts` 在放行白名单之前先检查 shell 语法与绝对路径；管道、重定向、home 展开、任意运行时、`find -delete`、`sed -i`、破坏性 `git branch` 均需确认；提权等仍直接拒绝；回归测试见 `tests/unit/security/permission-policy.test.ts`。
+- 冒烟测试：`tests/smoke/anthropic-api.smoke.ts` + `tests/smoke/smoke-assertions.ts`，`npm run test:smoke`；缺少凭据时打印一条 SKIP 说明并以退出码 0 结束，不发网络请求；真实 PASS 仅在完成带凭据的实际运行后记录（见未勾选项）。
+- 凭据安全：`.gitignore` 排除 `.env`、日志与密钥类文件；全仓库与提交历史扫描未发现真实凭据；`.env.example` 仅为占位。
 
 ### 未勾选/待办项
 
 - 公开仓库创建与推送（2.2/2.3）：需新建公开 GitHub/Gitee 仓库并推送分支；本次未推送、未改写历史。
-- 真实 API 冒烟执行：`npm run test:smoke` 需用户提供凭据后执行并记录结果。
+- 真实 API 冒烟执行并记录 PASS（2.2/阶段 A 冒烟里程碑）：`npm run test:smoke` 需在已导出 `ANTHROPIC_API_KEY` 的本地终端执行，仅记录模型 ID、状态、耗时与 PASS/FAIL；在取得 PASS 前该里程碑保持未勾选。
 - 演示视频（2.3/4.3/阶段 D）：录制 ≤2 分钟 MP4，展示“测试失败 - 阅读错误 - 修复 - 测试通过”闭环；≤200 MB、无凭据。
 - 演练与备用录屏（阶段 D）：多次演练后准备异常情况备用素材。
 - 打包与表单提交（2.3/阶段 D）：最终 ZIP 仅含 `README.txt` 与视频，以本人姓名命名，截止前提交。
 - 语义上下文摘要（4.2 末项）：当前为确定性压缩（保留任务文本、工具结果配对与 ID），不保留早期内容的语义摘要；列为 P2 增强。
+- 阶段一收尾合并（`fix/stage-one-hardening` → `main`）：仅在真实冒烟 PASS 且全部质量门通过后执行快速前进合并，不压缩、不改写历史。

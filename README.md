@@ -101,26 +101,27 @@ Design principles:
 ## Security model
 
 - File tools accept only workspace-relative paths; canonical paths are re-checked against the workspace root after `realpath` resolution, covering `..`, absolute paths and symlink escapes.
-- Commands always run with the workspace as `cwd`.
-- The balanced permission policy auto-allows reads, ordinary writes/edits, and common test/build/lint commands; deletion, dependency install, network and destructive git operations require confirmation; privilege escalation, disk formatting and obvious outside-workspace targets are denied.
+- Commands run with the workspace as `cwd`, inside a **sanitized allowlisted environment**: model credentials and unrelated parent variables (such as `DATABASE_URL`) are never passed to child processes. Only documented runtime variables (`PATH`, `HOME`, locale, color and CI flags, and Windows system variables) are copied.
+- Commands have a timeout, support cancellation, and stream output through a per-call live display budget (`UI_OUTPUT_MAX_BYTES`) that is separate from the model-result budget (`TOOL_OUTPUT_MAX_BYTES`).
+- The balanced permission policy auto-allows reads, ordinary writes/edits, and a strict set of test/build/lint and read-only git commands; pipelines, redirection, home expansion, arbitrary runtimes, deletion, dependency install, network and destructive git operations require confirmation; privilege escalation, disk formatting and obvious outside-workspace targets are denied.
 - A denied or cancelled tool still produces a structured tool result so the message history stays valid.
 
-This is a trusted local developer tool, not a hostile multi-tenant sandbox (see the design doc for TOCTOU limitations).
+This is a trusted local developer tool, **not an operating-system sandbox**: commands run with the permissions of your user account, and a project script you approve can still access any file your account can access (see the design doc for TOCTOU limitations).
 
 ## Testing
 
 ```bash
-npm test              # 114 unit + integration tests, offline
+npm test              # the full offline unit and integration suite, no network
 npm run typecheck
 npm run build
 npm run test:smoke    # opt-in real API smoke test; skips when env vars are absent
 ```
 
-Unit tests cover the runner loop, message invariants, workspace boundary, all tools, permission policy, retry, context compaction, provider translation and the CLI. The integration test drives a real fail → fix → pass coding loop (see `tests/fixtures/demo-project`) with only the model provider scripted.
+Unit tests cover the runner loop, message invariants, workspace boundary, credential isolation, command permission classification, all tools, permission policy, retry, context compaction, provider translation, the live-output limiter and the CLI. The integration test drives a real fail → fix → pass coding loop (see `tests/fixtures/demo-project`) with only the model provider scripted. `npm run test:smoke` reports `PASS` only after an actual credentialed run against the real endpoint; without credentials it prints a skip message and exits 0.
 
 ## Demo scenario
 
-`tests/fixtures/demo-project` contains a tiny module with a deliberately failing test. The recorded demo (see the submission `README.txt`) shows the agent listing files, reading the module and its test, editing to add input validation, running `npm test`, seeing the failure, fixing the range check, and reporting a green run.
+`tests/fixtures/demo-project` contains a tiny module with a deliberately failing test. The planned demo scenario shows the agent listing files, reading the module and its test, editing to add input validation, running `npm test`, seeing the failure, fixing the range check, and reporting a green run.
 
 ## Limitations
 
