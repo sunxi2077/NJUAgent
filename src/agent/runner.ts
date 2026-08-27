@@ -8,9 +8,14 @@ import type {
   ProviderEvent,
 } from "../providers/provider.js";
 
+export type ToolPortResult = ToolResultBlock & { durationMs?: number };
+
 export interface ToolExecutorPort {
   definitions(): readonly ModelToolDefinition[];
-  execute(call: ToolCallBlock, signal: AbortSignal): Promise<ToolResultBlock>;
+  execute(
+    call: ToolCallBlock,
+    signal: AbortSignal,
+  ): Promise<ToolPortResult>;
 }
 
 export type AgentRunnerOptions = {
@@ -40,21 +45,37 @@ export class AgentRunner {
       });
     }
 
-    steps += 1;
-    this.emit({ type: "model_started", step: steps });
+    while (steps < this.options.maxSteps) {
+      steps += 1;
+      this.emit({ type: "model_started", step: steps });
 
-    let completed: Extract<ProviderEvent, { type: "message_completed" }> | undefined;
-    try {
-      const stream = this.options.provider.stream(
-        {
-          system: this.options.systemPrompt,
-          messages: this.options.history.snapshot(),
-          tools: this.options.tools.definitions(),
-        },
-        signal,
-      );
+      let completed: Extract<ProviderEvent, { type: "message_completed" }> | undefined;
+      try {
+        const stream = this.options.provider.stream(
+          {
+            system: this.options.systemPrompt,
+            messages: this.options.history.snapshot(),
+            tools: this.options.tools.definitions(),
+          },
+          signal,
+        );
 
-      for await (const event of stream) {
+        for await (const event of stream) {
+          if (signal.aborted) {
+            return this.finish({
+              status: "cancelled",
+              steps,
+              toolCalls,
+              durationMs: performance.now() - startedAt,
+            });
+          }
+          if (event.type === "text_delta" || event.type === "usage") {
+            this.emit(event);
+          } else {
+            completed = event;
+          }
+        }
+      } catch (error) {
         if (signal.aborted) {
           return this.finish({
             status: "cancelled",
@@ -63,15 +84,63 @@ export class AgentRunner {
             durationMs: performance.now() - startedAt,
           });
         }
-        if (event.type === "text_delta") {
-          this.emit(event);
-        } else if (event.type === "usage") {
-          this.emit(event);
-        } else {
-          completed = event;
-        }
+        return this.finish({
+          status: "model_failed",
+          message: error instanceof Error ? error.message : String(error),
+          steps,
+          toolCalls,
+          durationMs: performance.now() - startedAt,
+        });
       }
-    } catch (error) {
+
+      if (completed === undefined) {
+        return this.finish({
+          status: "model_failed",
+          message: "Provider stream ended without a completed assistant message",
+          steps,
+          toolCalls,
+          durationMs: performance.now() - startedAt,
+        });
+      }
+
+      this.options.history.appendAssistant(completed.message);
+      this.emit({ type: "model_completed", stopReason: completed.stopReason });
+      const calls = completed.message.content.filter(
+        (block): block is ToolCallBlock => block.type === "tool_call",
+      );
+      toolCalls += calls.length;
+
+      if (calls.length === 0) {
+        return this.finish({
+          status: "completed",
+          steps,
+          toolCalls,
+          durationMs: performance.now() - startedAt,
+        });
+      }
+
+      const results: ToolResultBlock[] = [];
+      for (const call of calls) {
+        this.emit({ type: "tool_started", id: call.id, name: call.name });
+        const result = signal.aborted
+          ? this.cancelledResult(call)
+          : await this.options.tools.execute(call, signal);
+        results.push({
+          type: "tool_result",
+          toolCallId: result.toolCallId,
+          content: result.content,
+          isError: result.isError,
+        });
+        this.emit({
+          type: "tool_completed",
+          id: call.id,
+          name: call.name,
+          ok: !result.isError,
+          durationMs: result.durationMs ?? 0,
+        });
+      }
+      this.options.history.appendToolResults(results);
+
       if (signal.aborted) {
         return this.finish({
           status: "cancelled",
@@ -80,33 +149,10 @@ export class AgentRunner {
           durationMs: performance.now() - startedAt,
         });
       }
-      return this.finish({
-        status: "model_failed",
-        message: error instanceof Error ? error.message : String(error),
-        steps,
-        toolCalls,
-        durationMs: performance.now() - startedAt,
-      });
     }
-
-    if (completed === undefined) {
-      return this.finish({
-        status: "model_failed",
-        message: "Provider stream ended without a completed assistant message",
-        steps,
-        toolCalls,
-        durationMs: performance.now() - startedAt,
-      });
-    }
-
-    this.options.history.appendAssistant(completed.message);
-    toolCalls = completed.message.content.filter(
-      (block) => block.type === "tool_call",
-    ).length;
-    this.emit({ type: "model_completed", stopReason: completed.stopReason });
 
     return this.finish({
-      status: "completed",
+      status: "limit_reached",
       steps,
       toolCalls,
       durationMs: performance.now() - startedAt,
@@ -120,5 +166,14 @@ export class AgentRunner {
   private finish(result: RunResult): RunResult {
     this.emit({ type: "run_finished", result });
     return result;
+  }
+
+  private cancelledResult(call: ToolCallBlock): ToolPortResult {
+    return {
+      type: "tool_result",
+      toolCallId: call.id,
+      content: "Tool execution was cancelled",
+      isError: true,
+    };
   }
 }

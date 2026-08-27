@@ -18,6 +18,15 @@ function complete(message: AssistantMessage): ProviderEvent {
   return { type: "message_completed", message, stopReason: "end_turn" };
 }
 
+function toolAssistant(
+  calls: readonly { id: string; name: string; input: unknown }[],
+): AssistantMessage {
+  return {
+    role: "assistant",
+    content: calls.map((call) => ({ type: "tool_call" as const, ...call })),
+  };
+}
+
 class ScriptedProvider implements ModelProvider {
   readonly requests: ModelRequest[] = [];
 
@@ -122,5 +131,179 @@ describe("AgentRunner", () => {
     expect(history.snapshot()).toEqual([
       { role: "user", content: [{ type: "text", text: "fix it" }] },
     ]);
+  });
+
+  test("executes tool calls and sends their matching results in the next model request", async () => {
+    const callMessage = toolAssistant([
+      { id: "read-1", name: "read_file", input: { path: "src/index.ts" } },
+    ]);
+    const provider = new ScriptedProvider([
+      [complete(callMessage)],
+      [{ type: "text_delta", text: "fixed" }, complete(textAssistant("fixed"))],
+    ]);
+    const executed: string[] = [];
+    const tools: ToolExecutorPort = {
+      definitions: () => [{ name: "read_file", description: "Read", inputSchema: {} }],
+      execute: async (call) => {
+        executed.push(call.id);
+        return {
+          type: "tool_result",
+          toolCallId: call.id,
+          content: "source text",
+          isError: false,
+        };
+      },
+    };
+    const history = new ConversationHistory();
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+    });
+
+    const result = await runner.run("fix it", new AbortController().signal);
+
+    expect(result).toMatchObject({ status: "completed", steps: 2, toolCalls: 1 });
+    expect(executed).toEqual(["read-1"]);
+    expect(provider.requests[1]?.messages).toEqual([
+      { role: "user", content: [{ type: "text", text: "fix it" }] },
+      callMessage,
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: "read-1",
+            content: "source text",
+            isError: false,
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("preserves ordered success and failure results for a multi-tool batch", async () => {
+    const calls = toolAssistant([
+      { id: "first", name: "read_file", input: { path: "missing.ts" } },
+      { id: "second", name: "read_file", input: { path: "ok.ts" } },
+    ]);
+    const provider = new ScriptedProvider([
+      [complete(calls)],
+      [complete(textAssistant("recovered"))],
+    ]);
+    const tools: ToolExecutorPort = {
+      definitions: () => [],
+      execute: async (call) => ({
+        type: "tool_result",
+        toolCallId: call.id,
+        content: call.id === "first" ? "not found" : "ok",
+        isError: call.id === "first",
+      }),
+    };
+    const history = new ConversationHistory();
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+    });
+
+    const result = await runner.run("inspect", new AbortController().signal);
+
+    expect(result).toMatchObject({ status: "completed", steps: 2, toolCalls: 2 });
+    expect(history.snapshot()[2]).toEqual({
+      role: "user",
+      content: [
+        { type: "tool_result", toolCallId: "first", content: "not found", isError: true },
+        { type: "tool_result", toolCallId: "second", content: "ok", isError: false },
+      ],
+    });
+  });
+
+  test("returns limit_reached after recording the final allowed step and its tool result", async () => {
+    const provider = new ScriptedProvider([
+      [complete(toolAssistant([{ id: "only", name: "echo", input: {} }]))],
+    ]);
+    const tools: ToolExecutorPort = {
+      definitions: () => [],
+      execute: async (call) => ({
+        type: "tool_result",
+        toolCallId: call.id,
+        content: "ok",
+        isError: false,
+      }),
+    };
+    const history = new ConversationHistory();
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools,
+      maxSteps: 1,
+      systemPrompt: "Be precise.",
+    });
+
+    const result = await runner.run("loop", new AbortController().signal);
+
+    expect(result).toMatchObject({ status: "limit_reached", steps: 1, toolCalls: 1 });
+    expect(history.snapshot()).toHaveLength(3);
+  });
+
+  test("adds cancelled results for unexecuted calls when cancellation happens mid-batch", async () => {
+    const controller = new AbortController();
+    const provider = new ScriptedProvider([
+      [
+        complete(toolAssistant([
+          { id: "first", name: "echo", input: {} },
+          { id: "second", name: "echo", input: {} },
+        ])),
+      ],
+    ]);
+    const executed: string[] = [];
+    const tools: ToolExecutorPort = {
+      definitions: () => [],
+      execute: async (call) => {
+        executed.push(call.id);
+        controller.abort();
+        return {
+          type: "tool_result",
+          toolCallId: call.id,
+          content: "cancelled while running",
+          isError: true,
+        };
+      },
+    };
+    const history = new ConversationHistory();
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+    });
+
+    const result = await runner.run("cancel", controller.signal);
+
+    expect(result).toMatchObject({ status: "cancelled", steps: 1, toolCalls: 2 });
+    expect(executed).toEqual(["first"]);
+    expect(history.snapshot()[2]).toEqual({
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          toolCallId: "first",
+          content: "cancelled while running",
+          isError: true,
+        },
+        {
+          type: "tool_result",
+          toolCallId: "second",
+          content: "Tool execution was cancelled",
+          isError: true,
+        },
+      ],
+    });
   });
 });

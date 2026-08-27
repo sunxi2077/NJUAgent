@@ -241,23 +241,23 @@ Run focused tests and `npm test`; commit as `feat: add validated tool execution 
 - Consumes: `ToolExecutor.execute` from Task 3.
 - Produces: a loop that translates each assistant `tool_call` into one ordered user `tool_result` block.
 
-- [ ] **Step 1: Write a failing two-step tool-loop test**
+- [x] **Step 1: Write a failing two-step tool-loop test**
 
 Use a scripted provider whose first response calls `read_file` and whose second response is text-only. Assert the second request contains the assistant tool call followed by the matching user tool result.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/agent/runner.test.ts -t "executes tool calls"`.
 
-- [ ] **Step 3: Implement serial execution and result appending**
+- [x] **Step 3: Implement serial execution and result appending**
 
 Execute calls in content order, emit start/complete events, append one user message containing all ordered results, then continue the model loop.
 
-- [ ] **Step 4: Add multi-tool failure, mid-batch cancellation, and maximum-step tests**
+- [x] **Step 4: Add multi-tool failure, mid-batch cancellation, and maximum-step tests**
 
 On cancellation, already announced but unexecuted calls receive `cancelled` results so `assertValidHistory` still passes.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run all runner and message tests, then the full suite; commit as `feat: complete model tool-call loop`.
 
