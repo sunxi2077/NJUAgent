@@ -296,19 +296,19 @@ Run focused and full tests; commit as `feat: enforce workspace file boundary`.
 - Consumes: `Workspace` and `Tool`.
 - Produces: `createReadFileTool`, `createWriteFileTool`, `createEditFileTool`.
 
-- [ ] **Step 1: Write failing tests for read pagination and exact edit**
+- [x] **Step 1: Write failing tests for read pagination and exact edit**
 
 Use a temporary workspace with literal fixture text. Assert one-based line ranges, no-match failure, ambiguous-match failure, one-match replacement, explicit replace-all, and write-parent creation.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/tools/file-tools.test.ts`.
 
-- [ ] **Step 3: Implement the three tools**
+- [x] **Step 3: Implement the three tools**
 
 Return stable text plus metadata `{ path, bytes, truncated }`; reject NUL bytes and binary input; enforce the configured model-output byte budget.
 
-- [ ] **Step 4: Add workspace-escape and truncation cases, verify GREEN, and commit**
+- [x] **Step 4: Add workspace-escape and truncation cases, verify GREEN, and commit**
 
 Run focused and full tests; commit as `feat: add guarded file tools`.
 
