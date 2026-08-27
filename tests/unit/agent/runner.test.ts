@@ -306,4 +306,29 @@ describe("AgentRunner", () => {
       ],
     });
   });
+
+  test("returns context_limit without calling the provider when context policy stops", async () => {
+    const provider = new ScriptedProvider([[complete(textAssistant("unused"))]]);
+    const history = new ConversationHistory();
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools: emptyTools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+      contextPolicy: {
+        prepare: (messages) => ({
+          action: "stop",
+          messages,
+          estimatedTokens: 999,
+          compactedToolResults: 0,
+        }),
+      },
+    });
+
+    const result = await runner.run("large task", new AbortController().signal);
+
+    expect(result).toMatchObject({ status: "context_limit", steps: 0, toolCalls: 0 });
+    expect(provider.requests).toHaveLength(0);
+  });
 });

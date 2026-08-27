@@ -377,19 +377,19 @@ Run focused and full tests; commit as `feat: add cancellable command execution`.
 **Interfaces:**
 - Produces: `ContextPolicy.prepare(messages, usage): ContextDecision` where decision is `continue`, `compacted`, or `stop`.
 
-- [ ] **Step 1: Write a failing compaction test**
+- [x] **Step 1: Write a failing compaction test**
 
 Build literal old and recent tool batches. Assert only old tool-result content becomes a metadata placeholder, IDs and call ordering remain unchanged, recent messages remain byte-for-byte equal, and an oversized remainder returns `stop`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/agent/context-policy.test.ts`.
 
-- [ ] **Step 3: Implement conservative estimation and compaction**
+- [x] **Step 3: Implement conservative estimation and compaction**
 
 Use provider usage when available and a documented character estimate otherwise. Never remove user text, assistant tool calls, current results, or the configured recent-message window.
 
-- [ ] **Step 4: Integrate `context_limit`, verify GREEN, and commit**
+- [x] **Step 4: Integrate `context_limit`, verify GREEN, and commit**
 
 Run context, runner, history, and full tests; commit as `feat: bound conversation context`.
 

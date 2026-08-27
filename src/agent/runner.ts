@@ -1,4 +1,5 @@
 import type { AgentEventHandler } from "./events.js";
+import type { ContextPolicyPort } from "./context-policy.js";
 import { ConversationHistory } from "./history.js";
 import type { ToolCallBlock, ToolResultBlock } from "./messages.js";
 import type { RunResult } from "./result.js";
@@ -24,6 +25,7 @@ export type AgentRunnerOptions = {
   tools: ToolExecutorPort;
   maxSteps: number;
   systemPrompt: string;
+  contextPolicy?: ContextPolicyPort;
   onEvent?: AgentEventHandler;
 };
 
@@ -34,6 +36,7 @@ export class AgentRunner {
     const startedAt = performance.now();
     let steps = 0;
     let toolCalls = 0;
+    let lastInputTokens: number | undefined;
     this.options.history.appendUserText(userText);
 
     if (signal.aborted) {
@@ -46,6 +49,25 @@ export class AgentRunner {
     }
 
     while (steps < this.options.maxSteps) {
+      const historySnapshot = this.options.history.snapshot();
+      const context = this.options.contextPolicy?.prepare(
+        historySnapshot,
+        lastInputTokens,
+      ) ?? {
+        action: "continue" as const,
+        messages: historySnapshot,
+        estimatedTokens: 0,
+        compactedToolResults: 0,
+      };
+      if (context.action === "stop") {
+        return this.finish({
+          status: "context_limit",
+          steps,
+          toolCalls,
+          durationMs: performance.now() - startedAt,
+        });
+      }
+
       steps += 1;
       this.emit({ type: "model_started", step: steps });
 
@@ -54,7 +76,7 @@ export class AgentRunner {
         const stream = this.options.provider.stream(
           {
             system: this.options.systemPrompt,
-            messages: this.options.history.snapshot(),
+            messages: context.messages,
             tools: this.options.tools.definitions(),
           },
           signal,
@@ -69,7 +91,10 @@ export class AgentRunner {
               durationMs: performance.now() - startedAt,
             });
           }
-          if (event.type === "text_delta" || event.type === "usage") {
+          if (event.type === "usage") {
+            lastInputTokens = event.inputTokens;
+            this.emit(event);
+          } else if (event.type === "text_delta") {
             this.emit(event);
           } else {
             completed = event;
