@@ -539,11 +539,11 @@ Run `npm test`, `npm run typecheck`, and `npm run build`; commit as `test: verif
 **Interfaces:**
 - Produces: `npm run test:smoke`, complete run instructions, architecture explanation, security limitations, and submission checklist.
 
-- [ ] **Step 1: Add an opt-in smoke script**
+- [x] **Step 1: Add an opt-in smoke script**
 
 The script exits with a clear skip message when variables are absent. When present, it performs one short text turn and one harmless `read_file` tool turn against a temporary workspace; it never prints request headers or environment values.
 
-- [ ] **Step 2: Run offline quality gates**
+- [x] **Step 2: Run offline quality gates**
 
 Run `npm test`, `npm run typecheck`, and `npm run build`. All must exit zero before checking requirement boxes.
 
@@ -551,11 +551,11 @@ Run `npm test`, `npm run typecheck`, and `npm run build`. All must exit zero bef
 
 Run: `npm run test:smoke`. Record only model ID, status, latency, and pass/fail; do not persist response text if it may contain local data.
 
-- [ ] **Step 4: Write developer and submission documentation**
+- [x] **Step 4: Write developer and submission documentation**
 
 `README.md` must explain installation, environment variables, commands, architecture, tools, permissions, limitations, tests, and demo. `README.txt` must stay within 1000 Chinese characters and contain repository URL placeholder instructions without inventing an unpublished URL.
 
-- [ ] **Step 5: Audit every requirement and commit**
+- [x] **Step 5: Audit every requirement and commit**
 
 For every checkbox in `docs/PROJECT_REQUIREMENTS.md`, link it to a test, command output, file, or remaining external delivery action. Mark only proven implementation items complete; leave video, public repository URL, form submission, and deadline-dependent items unchecked until actually done. Commit as `docs: document usage and delivery evidence`.
 
