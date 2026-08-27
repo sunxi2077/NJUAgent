@@ -140,7 +140,7 @@ The function must allow text-only user messages, require tool results to immedia
 Run: `npm test -- tests/unit/agent/messages.test.ts`  
 Expected: all message tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run: `git add .gitignore .env.example package.json package-lock.json tsconfig.json vitest.config.ts src/agent/messages.ts tests/unit/agent/messages.test.ts && git commit -m "chore: initialize typed agent core"`.
 
@@ -154,7 +154,7 @@ Run: `git add .gitignore .env.example package.json package-lock.json tsconfig.js
 - Consumes: message types and `assertValidHistory` from Task 1.
 - Produces: `ModelRequest`, `ProviderEvent`, `ModelProvider`, `AgentEvent`, `RunResult`, `ConversationHistory`, `AgentRunner.run(userText, signal): Promise<RunResult>`.
 
-- [ ] **Step 1: Write a failing text-only runner test**
+- [x] **Step 1: Write a failing text-only runner test**
 
 ```ts
 test("completes after a final assistant message and preserves it", async () => {
@@ -174,20 +174,20 @@ test("completes after a final assistant message and preserves it", async () => {
 });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/agent/runner.test.ts`  
 Expected: FAIL because the runner and provider contract are absent.
 
-- [ ] **Step 3: Implement the minimal text-only loop**
+- [x] **Step 3: Implement the minimal text-only loop**
 
 Collect streamed events, emit renderer-facing events, require one final `message_completed`, append only the complete assistant message, and return common statistics.
 
-- [ ] **Step 4: Add cancellation, missing-final-event, and max-step tests**
+- [x] **Step 4: Add cancellation and missing-final-event tests**
 
-Assert that an interrupted half stream is not appended and a stream without `message_completed` returns `model_failed`.
+Assert that an interrupted half stream is not appended and a stream without `message_completed` returns `model_failed`. The maximum-step behavior is exercised after the tool loop exists in Task 4.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run: `npm test -- tests/unit/agent/runner.test.ts` then `npm test`.  
 Commit: `git commit -am "feat: add vendor-neutral agent loop"` after staging new files.
@@ -253,7 +253,7 @@ Run: `npm test -- tests/unit/agent/runner.test.ts -t "executes tool calls"`.
 
 Execute calls in content order, emit start/complete events, append one user message containing all ordered results, then continue the model loop.
 
-- [ ] **Step 4: Add multi-tool failure and mid-batch cancellation tests**
+- [ ] **Step 4: Add multi-tool failure, mid-batch cancellation, and maximum-step tests**
 
 On cancellation, already announced but unexecuted calls receive `cancelled` results so `assertValidHistory` still passes.
 
