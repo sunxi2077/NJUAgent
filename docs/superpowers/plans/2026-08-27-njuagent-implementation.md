@@ -270,19 +270,19 @@ Run all runner and message tests, then the full suite; commit as `feat: complete
 **Interfaces:**
 - Produces: `Workspace.open(root)`, `resolveExisting(relativePath)`, `resolveForWrite(relativePath)`, and `toRelative(absolutePath)`.
 
-- [ ] **Step 1: Write failing traversal and symlink tests**
+- [x] **Step 1: Write failing traversal and symlink tests**
 
 Create real temporary directories. Assert normal in-root paths resolve, while `../secret`, absolute paths, an existing symlink to outside, and a nonexistent child below an outside symlink all reject with `WorkspaceViolationError`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/security/workspace.test.ts`.
 
-- [ ] **Step 3: Implement canonical resolution**
+- [x] **Step 3: Implement canonical resolution**
 
 Use `realpath`, `lstat`, `path.relative`, and the nearest existing parent for write targets. A valid relative result must be empty or neither absolute nor start with `..` plus a separator.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run focused and full tests; commit as `feat: enforce workspace file boundary`.
 
