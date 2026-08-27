@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
+import { createCommandEnvironment } from "../security/command-environment.js";
 import type { Workspace } from "../security/workspace.js";
 import { truncateUtf8 } from "./output-budget.js";
 import type { Tool, ToolContext, ToolOutputStream } from "./tool.js";
@@ -8,6 +9,7 @@ type RunCommandOptions = {
   workspace: Workspace;
   defaultTimeoutMs: number;
   maxOutputBytes: number;
+  sourceEnvironment?: NodeJS.ProcessEnv;
 };
 
 type RunCommandInput = {
@@ -125,9 +127,12 @@ export function createRunCommandTool(options: RunCommandOptions): Tool<RunComman
       const args = process.platform === "win32"
         ? ["/d", "/s", "/c", input.command]
         : ["-lc", input.command];
+      const commandEnvironment = createCommandEnvironment(
+        options.sourceEnvironment ?? process.env,
+      );
       const child = spawn(shell, args, {
         cwd: options.workspace.root,
-        env: process.env,
+        env: commandEnvironment,
         detached: process.platform !== "win32",
         stdio: ["ignore", "pipe", "pipe"],
       });

@@ -94,6 +94,7 @@ async function main(): Promise<void> {
       workspace,
       defaultTimeoutMs: config.commandTimeoutMs,
       maxOutputBytes: config.toolOutputMaxBytes,
+      sourceEnvironment: process.env,
     }),
   );
 

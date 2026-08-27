@@ -9,7 +9,10 @@ import type { ToolContext } from "../../../src/tools/tool.js";
 
 const temporaryDirectories: string[] = [];
 
-async function fixture(maxOutputBytes = 4096) {
+async function fixture(
+  maxOutputBytes = 4096,
+  sourceEnvironment: NodeJS.ProcessEnv = process.env,
+) {
   const root = await mkdtemp(path.join(tmpdir(), "nju-command-tool-"));
   temporaryDirectories.push(root);
   const workspace = await Workspace.open(root);
@@ -19,6 +22,7 @@ async function fixture(maxOutputBytes = 4096) {
       workspace,
       defaultTimeoutMs: 2000,
       maxOutputBytes,
+      sourceEnvironment,
     }),
   };
 }
@@ -110,5 +114,21 @@ describe("run_command", () => {
     expect(result.content).toContain("bytes omitted");
     expect(result.metadata).toMatchObject({ truncated: true });
     expect(liveBytes).toBe(2000);
+  });
+
+  test("does not expose model credentials to the child process", async () => {
+    const { tool } = await fixture(4096, {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      ANTHROPIC_API_KEY: "must-not-reach-child",
+    });
+    const result = await tool.execute(
+      { command: nodeCommand("console.log(process.env.ANTHROPIC_API_KEY ?? 'missing')") },
+      { signal: new AbortController().signal, emitOutput: () => undefined },
+    );
+
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain("stdout:\nmissing");
+    expect(result.content).not.toContain("must-not-reach-child");
   });
 });
