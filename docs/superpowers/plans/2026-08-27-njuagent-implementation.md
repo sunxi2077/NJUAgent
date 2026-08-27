@@ -202,7 +202,7 @@ Commit: `git commit -am "feat: add vendor-neutral agent loop"` after staging new
 **Interfaces:**
 - Produces: `Tool`, `ToolOutput`, `ToolContext`, `ToolRegistry`, `ToolExecutor.execute(call, signal)`, `PermissionPolicy.decide(request)`.
 
-- [ ] **Step 1: Write the failing behavior test**
+- [x] **Step 1: Write the failing behavior test**
 
 ```ts
 test("returns a structured error without calling a tool when input violates its schema", async () => {
@@ -215,19 +215,19 @@ test("returns a structured error without calling a tool when input violates its 
 });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/tools/executor.test.ts`.
 
-- [ ] **Step 3: Implement registry, Ajv validation, and executor**
+- [x] **Step 3: Implement registry, Ajv validation, and executor**
 
 Unknown tools produce `unknown_tool`; thrown exceptions produce `execution_failed`; deny produces `permission_denied`; ask delegates to an injected async confirmation function. Every branch retains the original tool-call ID.
 
-- [ ] **Step 4: Add tests for duplicate registration, deny, ask-decline, throw, and abort**
+- [x] **Step 4: Add tests for duplicate registration, deny, ask-decline, throw, and abort**
 
 Each test asserts the returned real `ToolOutput`, not an assertion on a mocked executor.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run focused tests and `npm test`; commit as `feat: add validated tool execution pipeline`.
 
