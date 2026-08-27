@@ -429,19 +429,19 @@ Run focused, runner, and full tests; commit as `feat: retry transient model fail
 - Consumes: internal `ModelRequest`, `ProviderEvent`, and `ProviderError`.
 - Produces: `AnthropicProvider` implementing `ModelProvider`.
 
-- [ ] **Step 1: Write failing fixture-driven adapter tests**
+- [x] **Step 1: Write failing fixture-driven adapter tests**
 
 Inject a narrow `messages.create` client boundary. Feed complete Anthropic stream event fixtures for text and tool use; assert internal deltas and one final `message_completed`. Include malformed partial JSON and mapped 401/429/500 cases.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/providers/anthropic-provider.test.ts`.
 
-- [ ] **Step 3: Implement request and stream translation**
+- [x] **Step 3: Implement request and stream translation**
 
 Map internal messages and JSON Schemas to Anthropic request blocks, accumulate tool JSON by content index, validate completion, map usage, and convert SDK errors without exporting an SDK type.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run focused, typecheck, and full tests; commit as `feat: add Anthropic-compatible model provider`.
 
