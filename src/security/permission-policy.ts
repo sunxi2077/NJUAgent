@@ -28,6 +28,9 @@ function commandText(request: ToolExecutionRequest): string | undefined {
   return typeof command === "string" ? command.trim() : undefined;
 }
 
+const shellSyntaxRequiringConfirmation = /[\n\r;&|`$<>(){}\[\]*?~]/u;
+const explicitAbsolutePath = /(?:^|\s|=)\/(?!dev\/null(?:\s|$))/u;
+
 function classifyCommand(command: string): PermissionDecision {
   const normalized = command.toLowerCase();
   const denied = [
@@ -42,25 +45,37 @@ function classifyCommand(command: string): PermissionDecision {
     return { action: "deny", reason: "Command targets privileged or outside-workspace resources" };
   }
 
-  if (/[;&]|\|\||`|\$\(/u.test(command)) {
-    return { action: "ask", reason: "Compound shell command requires confirmation" };
+  // Conservative shell-syntax and absolute-path check runs before the
+  // allowlist: pipelines, redirection, home expansion and absolute targets
+  // always require a visible confirmation, even when the leading command
+  // would otherwise look safe.
+  if (
+    shellSyntaxRequiringConfirmation.test(command) ||
+    explicitAbsolutePath.test(command)
+  ) {
+    return {
+      action: "ask",
+      reason: "Shell syntax or an absolute path requires confirmation",
+    };
   }
 
   const confirmationRequired = [
     /^(?:rm|rmdir|unlink)\b/u,
     /^(?:npm|pnpm|yarn|bun)\s+(?:install|add|remove|uninstall|update|upgrade)\b/u,
     /^(?:curl|wget|ssh|scp|rsync)\b/u,
-    /^git\s+(?:reset|clean|push|pull|checkout\s+--|restore\s+--source)\b/u,
+    /^git\s+(?:reset|clean|push|pull|checkout\s+--|restore\s+--source|branch\s+-D|branch\s+--delete)\b/u,
   ];
   if (confirmationRequired.some((pattern) => pattern.test(normalized))) {
     return { action: "ask", reason: "Command may modify dependencies, remote state, or many files" };
   }
 
   const allowed = [
-    /^(?:pwd|ls|rg|grep|find|cat|sed|head|tail|wc)\b/u,
-    /^git\s+(?:status|diff|log|show|branch|rev-parse)\b/u,
-    /^(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+(?:test|build|lint|typecheck|check))\b/u,
-    /^(?:node|tsc|vitest|pytest|cargo\s+(?:test|check|build)|go\s+test)\b/u,
+    /^(?:pwd|ls|rg|grep|cat|head|tail|wc)(?:\s|$)/u,
+    /^git\s+(?:status|diff|log|show|rev-parse)(?:\s|$)/u,
+    /^(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+(?:test|build|lint|typecheck|check))(?:\s|$)/u,
+    /^(?:tsc|vitest|pytest)(?:\s|$)/u,
+    /^cargo\s+(?:test|check|build)(?:\s|$)/u,
+    /^go\s+test(?:\s|$)/u,
   ];
   if (allowed.some((pattern) => pattern.test(normalized))) {
     return { action: "allow" };
