@@ -1,0 +1,29 @@
+import { describe, expect, test } from "vitest";
+
+import { buildSystemPrompt } from "../../src/agent/system-prompt.js";
+
+describe("buildSystemPrompt", () => {
+  test("asks the model to run relevant tests or builds after changing code", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/test|build/u);
+    expect(prompt).toMatch(/after changing|after modifying|then run/iu);
+  });
+
+  test("requires truthful reporting of changes and verification results", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/truthful|truthfully|honest/u);
+    expect(prompt).toMatch(/what.*changed|changed/u);
+    expect(prompt).toMatch(/verif|pass|fail/u);
+  });
+
+  test("prefers minimal, focused edits after understanding existing code", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/minimal|small|focused/u);
+    expect(prompt).toMatch(/understand|existing/u);
+  });
+
+  test("does not ask the model to enforce safety on its own", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/workspace/u);
+  });
+});

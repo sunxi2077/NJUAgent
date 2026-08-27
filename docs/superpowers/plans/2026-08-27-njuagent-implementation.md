@@ -484,23 +484,23 @@ Run CLI tests and full suite; commit as `feat: add streaming terminal session`.
 **Interfaces:**
 - Produces: `loadConfig(env, argv): AppConfig`, executable `nju-agent` bin.
 
-- [ ] **Step 1: Write failing configuration behavior tests**
+- [x] **Step 1: Write failing configuration behavior tests**
 
 Assert missing variable names are listed without values; numeric limits reject zero, negatives, and nonnumbers; defaults are applied; `--workspace`, `--debug`, and `--permission-mode` override only their documented fields.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/config.test.ts`.
 
-- [ ] **Step 3: Implement config, prompt, and composition root**
+- [x] **Step 3: Implement config, prompt, and composition root**
 
 Construct workspace, policies, tools, executor, provider, history, runner, renderer, prompt, and session in `src/index.ts`. The system prompt explicitly asks for minimal changes, relevant verification, and truthful final reporting.
 
-- [ ] **Step 4: Verify build and CLI startup errors**
+- [x] **Step 4: Verify build and CLI startup errors**
 
 Run `npm run typecheck`, `npm run build`, and the built CLI without model variables; expect a concise actionable configuration error and nonzero exit.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit as `feat: assemble runnable coding agent CLI`.
 
