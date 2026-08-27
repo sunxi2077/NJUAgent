@@ -321,19 +321,19 @@ Run focused and full tests; commit as `feat: add guarded file tools`.
 **Interfaces:**
 - Produces: `createListFilesTool`, `createSearchTextTool`.
 
-- [ ] **Step 1: Write failing tests using a real temporary tree**
+- [x] **Step 1: Write failing tests using a real temporary tree**
 
 Assert sorted relative output, glob filtering, default exclusion of `.git` and `node_modules`, line-numbered matches, binary-file skipping, result-count limit, and truncation marker.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/tools/search-tools.test.ts`.
 
-- [ ] **Step 3: Implement recursive listing and search**
+- [x] **Step 3: Implement recursive listing and search**
 
 Use fast-glob for candidate paths, canonicalize every candidate through `Workspace`, read only files below the size limit, and sort results for reproducibility.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run focused and full tests; commit as `feat: add workspace search tools`.
 
