@@ -347,23 +347,23 @@ Run focused and full tests; commit as `feat: add workspace search tools`.
 **Interfaces:**
 - Produces: `createRunCommandTool`, `BalancedPermissionPolicy`, `CautiousPermissionPolicy`.
 
-- [ ] **Step 1: Write failing real-process tests**
+- [x] **Step 1: Write failing real-process tests**
 
 Run Node child commands in a temporary workspace. Assert captured stdout/stderr/exit code, fixed `cwd`, nonzero exit, timeout, AbortSignal cancellation, live chunk events, and head-tail truncation.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/tools/command-tool.test.ts`.
 
-- [ ] **Step 3: Implement cross-platform shell execution**
+- [x] **Step 3: Implement cross-platform shell execution**
 
 Use `/bin/sh -lc` on POSIX and `cmd.exe /d /s /c` on Windows, spawn detached where process-group termination is supported, and ensure timers/listeners are cleaned in every terminal branch.
 
-- [ ] **Step 4: Write and implement permission behavior**
+- [x] **Step 4: Write and implement permission behavior**
 
 Literal cases must cover allow for tests and inspection, ask for deletion/package installation/network/destructive Git, deny for privilege escalation/system shutdown/disk formatting/obvious outside-workspace targets, and cautious mode asking for every write or command.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run focused and full tests; commit as `feat: add cancellable command execution`.
 

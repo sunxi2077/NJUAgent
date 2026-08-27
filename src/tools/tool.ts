@@ -3,6 +3,7 @@ import type { ModelToolDefinition } from "../providers/provider.js";
 
 export type ToolOutput = {
   content: string;
+  isError?: boolean;
   metadata?: Record<string, unknown>;
 };
 

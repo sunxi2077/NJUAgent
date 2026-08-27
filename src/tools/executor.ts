@@ -85,8 +85,9 @@ export class ToolExecutor {
         type: "tool_result",
         toolCallId: call.id,
         content: output.content,
-        isError: false,
+        isError: output.isError ?? false,
         durationMs: performance.now() - startedAt,
+        ...(output.isError === true ? { code: "execution_failed" as const } : {}),
         ...(output.metadata === undefined ? {} : { metadata: output.metadata }),
       };
     } catch (error) {

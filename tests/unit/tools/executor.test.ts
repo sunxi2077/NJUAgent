@@ -129,6 +129,27 @@ describe("ToolExecutor", () => {
     expect(result.content).toContain("disk unavailable");
   });
 
+  test("preserves an unsuccessful tool outcome and its metadata", async () => {
+    const tool: Tool = {
+      ...createEchoTool(),
+      execute: async () => ({
+        content: "exit_code: 2",
+        isError: true,
+        metadata: { exitCode: 2 },
+      }),
+    };
+    const result = await createExecutor({ tool }).execute(
+      { id: "c-command", name: "echo", input: { value: "hello" } },
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({
+      toolCallId: "c-command",
+      content: "exit_code: 2",
+      isError: true,
+      metadata: { exitCode: 2 },
+    });
+  });
+
   test("returns cancelled before executing when the signal is aborted", async () => {
     let executions = 0;
     const controller = new AbortController();
