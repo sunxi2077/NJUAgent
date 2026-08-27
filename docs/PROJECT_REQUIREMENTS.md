@@ -286,15 +286,14 @@ CLI
 - 配置校验与可执行入口：`src/config.ts`、`src/index.ts`；无模型变量时输出可操作错误并退出码 1；`--help`/`-h` 无需凭据即可运行并退出 0；可执行文件首行为 Node shebang。
 - 子进程环境隔离：`src/security/command-environment.ts` 以白名单方式构造命令环境，模型凭据与无关父进程变量（如 `DATABASE_URL`）不会进入子进程；回归测试见 `tests/unit/security/command-environment.test.ts` 与 `tests/unit/tools/command-tool.test.ts`。
 - 命令权限保守化：`src/security/permission-policy.ts` 在放行白名单之前先检查 shell 语法与绝对路径；管道、重定向、home 展开、任意运行时、`find -delete`、`sed -i`、破坏性 `git branch` 均需确认；提权等仍直接拒绝；回归测试见 `tests/unit/security/permission-policy.test.ts`。
-- 冒烟测试：`tests/smoke/anthropic-api.smoke.ts` + `tests/smoke/smoke-assertions.ts`，`npm run test:smoke`；缺少凭据时打印一条 SKIP 说明并以退出码 0 结束，不发网络请求；真实 PASS 仅在完成带凭据的实际运行后记录（见未勾选项）。
+- 冒烟测试：`tests/smoke/anthropic-api.smoke.ts` + `tests/smoke/smoke-assertions.ts`，`npm run test:smoke`；缺少凭据时打印一条 SKIP 说明并以退出码 0 结束，不发网络请求。**真实运行记录（2026-08-28）**：`SMOKE model=deepseek-v4-flash text_turn=completed tool_turn=completed tool_calls=1 duration_ms=3378 PASS`；阶段 A 的“接入 DeepSeek Anthropic 兼容 API，完成文本对话冒烟测试”里程碑据此勾选。
 - 凭据安全：`.gitignore` 排除 `.env`、日志与密钥类文件；全仓库与提交历史扫描未发现真实凭据；`.env.example` 仅为占位。
 
 ### 未勾选/待办项
 
 - 公开仓库创建与推送（2.2/2.3）：需新建公开 GitHub/Gitee 仓库并推送分支；本次未推送、未改写历史。
-- 真实 API 冒烟执行并记录 PASS（2.2/阶段 A 冒烟里程碑）：`npm run test:smoke` 需在已导出 `ANTHROPIC_API_KEY` 的本地终端执行，仅记录模型 ID、状态、耗时与 PASS/FAIL；在取得 PASS 前该里程碑保持未勾选。
 - 演示视频（2.3/4.3/阶段 D）：录制 ≤2 分钟 MP4，展示“测试失败 - 阅读错误 - 修复 - 测试通过”闭环；≤200 MB、无凭据。
 - 演练与备用录屏（阶段 D）：多次演练后准备异常情况备用素材。
 - 打包与表单提交（2.3/阶段 D）：最终 ZIP 仅含 `README.txt` 与视频，以本人姓名命名，截止前提交。
 - 语义上下文摘要（4.2 末项）：当前为确定性压缩（保留任务文本、工具结果配对与 ID），不保留早期内容的语义摘要；列为 P2 增强。
-- 阶段一收尾合并（`fix/stage-one-hardening` → `main`）：仅在真实冒烟 PASS 且全部质量门通过后执行快速前进合并，不压缩、不改写历史。
+- 阶段一收尾合并（`fix/stage-one-hardening` → `main`）：真实冒烟已 PASS，待执行快速前进合并与合并后全量验证；不压缩、不改写历史。
