@@ -74,7 +74,12 @@ describe("TerminalRenderer in plain (non-TTY) mode", () => {
     const stdout = new MemoryStdout();
     const renderer = plainRenderer(stdout);
 
-    renderer.handle({ type: "tool_started", id: "call-1", name: "read_file" });
+    renderer.handle({
+      type: "tool_started",
+      id: "call-1",
+      name: "read_file",
+      summary: '{"path":"src/a.ts"}',
+    });
     renderer.handle({
       type: "tool_completed",
       id: "call-1",
@@ -83,7 +88,9 @@ describe("TerminalRenderer in plain (non-TTY) mode", () => {
       durationMs: 12,
     });
 
-    expect(stdout.text()).toContain("[tool] read_file started (call-1)\n");
+    expect(stdout.text()).toContain(
+      '[tool] read_file started (call-1): {"path":"src/a.ts"}\n',
+    );
     expect(stdout.text()).toContain("[tool] read_file ok in 12ms (call-1)\n");
   });
 

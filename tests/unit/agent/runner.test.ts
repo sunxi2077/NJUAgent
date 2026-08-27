@@ -333,6 +333,47 @@ describe("AgentRunner", () => {
     expect(provider.requests).toHaveLength(0);
   });
 
+  test("emits a tool_started event with a compact input summary", async () => {
+    const provider = new ScriptedProvider([
+      [
+        complete(toolAssistant([
+          { id: "read-1", name: "read_file", input: { path: "src/a.ts" } },
+        ])),
+      ],
+      [complete(textAssistant("done"))],
+    ]);
+    const tools: ToolExecutorPort = {
+      definitions: () => [],
+      execute: async (call) => ({
+        type: "tool_result",
+        toolCallId: call.id,
+        content: "ok",
+        isError: false,
+      }),
+    };
+    const events: AgentEvent[] = [];
+    const runner = new AgentRunner({
+      provider,
+      history: new ConversationHistory(),
+      tools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+      onEvent: (event) => events.push(event),
+    });
+
+    await runner.run("read", new AbortController().signal);
+
+    const started = events.find(
+      (event): event is Extract<AgentEvent, { type: "tool_started" }> =>
+        event.type === "tool_started",
+    );
+    expect(started).toMatchObject({
+      id: "read-1",
+      name: "read_file",
+      summary: '{"path":"src/a.ts"}',
+    });
+  });
+
   test("retries transient provider failures and emits retry events", async () => {
     let attempts = 0;
     const provider: ModelProvider = {

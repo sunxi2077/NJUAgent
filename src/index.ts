@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { ContextPolicy } from "./agent/context-policy.js";
 import { ConversationHistory } from "./agent/history.js";
 import { AgentRunner } from "./agent/runner.js";
@@ -143,9 +145,12 @@ async function main(): Promise<void> {
     onEvent: (event) => renderer.handle(event),
   });
 
+  const sessionId = randomUUID();
+  console.log(`[session] ${sessionId}`);
+
   if (config.debug) {
     console.error(
-      `[debug] model=${config.model} base_url=${config.baseURL} ` +
+      `[debug] session=${sessionId} model=${config.model} base_url=${config.baseURL} ` +
         `workspace=${workspace.root} max_steps=${config.maxSteps} ` +
         `command_timeout_ms=${config.commandTimeoutMs} ` +
         `tool_output_max_bytes=${config.toolOutputMaxBytes}`,

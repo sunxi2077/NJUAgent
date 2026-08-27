@@ -6,7 +6,7 @@ export type AgentEvent =
   | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "model_completed"; stopReason: string }
   | { type: "retrying"; attempt: number; delayMs: number; reason: string }
-  | { type: "tool_started"; id: string; name: string }
+  | { type: "tool_started"; id: string; name: string; summary: string }
   | {
       type: "tool_completed";
       id: string;

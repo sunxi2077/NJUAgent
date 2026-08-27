@@ -90,10 +90,12 @@ export class TerminalRenderer implements Renderer {
       case "tool_started":
         this.#flushModelText();
         if (this.#interactive) {
-          this.#permanent(`${pc.cyan(`⚙ ${event.name}`)} (${event.id})`);
+          this.#permanent(
+            `${pc.cyan(`⚙ ${event.name}`)} ${pc.dim(event.summary)} (${event.id})`,
+          );
           this.#status(`${event.name}…`);
         } else {
-          this.#write(`[tool] ${event.name} started (${event.id})\n`);
+          this.#write(`[tool] ${event.name} started (${event.id}): ${event.summary}\n`);
         }
         break;
       case "tool_completed":

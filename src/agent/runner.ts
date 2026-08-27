@@ -154,7 +154,12 @@ export class AgentRunner {
 
       const results: ToolResultBlock[] = [];
       for (const call of calls) {
-        this.emit({ type: "tool_started", id: call.id, name: call.name });
+        this.emit({
+          type: "tool_started",
+          id: call.id,
+          name: call.name,
+          summary: summarizeToolCall(call),
+        });
         const result = signal.aborted
           ? this.cancelledResult(call)
           : await this.options.tools.execute(call, signal);
@@ -209,4 +214,21 @@ export class AgentRunner {
       isError: true,
     };
   }
+}
+
+const MAX_TOOL_SUMMARY_CHARS = 100;
+
+function summarizeToolCall(call: ToolCallBlock): string {
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(call.input);
+  } catch {
+    serialized = String(call.input);
+  }
+  if (serialized === undefined) {
+    serialized = String(call.input);
+  }
+  return serialized.length > MAX_TOOL_SUMMARY_CHARS
+    ? `${serialized.slice(0, MAX_TOOL_SUMMARY_CHARS)}…`
+    : serialized;
 }
