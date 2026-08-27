@@ -1,9 +1,12 @@
+#!/usr/bin/env node
+
 import { randomUUID } from "node:crypto";
 
 import { ContextPolicy } from "./agent/context-policy.js";
 import { ConversationHistory } from "./agent/history.js";
 import { AgentRunner } from "./agent/runner.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
+import { HELP_TEXT, isHelpRequest } from "./cli/help.js";
 import { formatPermissionQuestion, ReadlinePrompt } from "./cli/prompt.js";
 import { TerminalRenderer } from "./cli/renderer.js";
 import { CliSession } from "./cli/session.js";
@@ -27,13 +30,17 @@ import {
   createSearchTextTool,
 } from "./tools/search-tools.js";
 
-function tryLoadConfig(): AppConfig | undefined {
+function tryLoadConfig(argv: readonly string[]): AppConfig | undefined {
   try {
-    return loadConfig(process.env, process.argv.slice(2));
+    return loadConfig(process.env, argv);
   } catch (error) {
     if (error instanceof ConfigError) {
       console.error(`nju-agent: ${error.message}`);
-      console.error("Set the required environment variables and try again.");
+      if (error.message.startsWith("Missing required environment variable")) {
+        console.error("Set the required environment variables and try again.");
+      } else {
+        console.error('Run "nju-agent --help" for usage.');
+      }
       process.exitCode = 1;
       return undefined;
     }
@@ -55,7 +62,12 @@ async function openWorkspace(root: string): Promise<Workspace | undefined> {
 }
 
 async function main(): Promise<void> {
-  const config = tryLoadConfig();
+  const argv = process.argv.slice(2);
+  if (isHelpRequest(argv)) {
+    process.stdout.write(HELP_TEXT);
+    return;
+  }
+  const config = tryLoadConfig(argv);
   if (config === undefined) {
     return;
   }

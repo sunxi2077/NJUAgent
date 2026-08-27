@@ -33,10 +33,23 @@ All configuration comes from environment variables; the only supported CLI flags
 
 ## Usage
 
+Run from the repository root:
+
 ```bash
-nju-agent --workspace /path/to/project
-nju-agent --workspace /path/to/project --permission-mode cautious --debug
+npm install
+npm run build
+npm start -- --workspace /path/to/project
+npm start -- --workspace /path/to/project --permission-mode cautious --debug
 ```
+
+`nju-agent` becomes available as a short command only after an explicit link or install step (optional):
+
+```bash
+npm link
+nju-agent --workspace /path/to/project
+```
+
+Run `npm start -- --help` (or `node dist/index.js --help`) to see usage; help works without any API credentials.
 
 Then type a task, e.g.:
 

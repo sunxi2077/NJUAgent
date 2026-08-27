@@ -3,9 +3,9 @@ NJUAgent 是一个独立实现的命令行编程智能体：在指定工作区�
 仓库地址：<公开仓库地址占位，发布后填写>
 
 运行方法：
-1. 安装 Node.js 20+，执行 npm install 与 npm run build；
+1. 安装 Node.js 20+，在仓库根目录执行 npm install 与 npm run build；
 2. 设置环境变量 ANTHROPIC_API_KEY、ANTHROPIC_BASE_URL（DeepSeek Anthropic 兼容端点）与 MODEL_ID；
-3. 执行 nju-agent --workspace <项目目录>，输入任务即可开始。
+3. 执行 npm start -- --workspace <项目目录>，输入任务即可开始；npm link 后可改用 nju-agent 短命令。
 
 特色功能：
 - 自行实现 agent 循环、对话历史、工具协议与错误处理，仅将 @anthropic-ai/sdk 用作普通 API 客户端，未使用任何 agent 框架；
