@@ -8,6 +8,7 @@ import type {
   ModelToolDefinition,
   ProviderEvent,
 } from "../providers/provider.js";
+import { withModelRetry, type RetryPolicy } from "../providers/retry.js";
 
 export type ToolPortResult = ToolResultBlock & { durationMs?: number };
 
@@ -26,6 +27,7 @@ export type AgentRunnerOptions = {
   maxSteps: number;
   systemPrompt: string;
   contextPolicy?: ContextPolicyPort;
+  retryPolicy?: RetryPolicy;
   onEvent?: AgentEventHandler;
 };
 
@@ -73,14 +75,20 @@ export class AgentRunner {
 
       let completed: Extract<ProviderEvent, { type: "message_completed" }> | undefined;
       try {
-        const stream = this.options.provider.stream(
-          {
-            system: this.options.systemPrompt,
-            messages: context.messages,
-            tools: this.options.tools.definitions(),
-          },
-          signal,
-        );
+        const request = {
+          system: this.options.systemPrompt,
+          messages: context.messages,
+          tools: this.options.tools.definitions(),
+        };
+        const openStream = () => this.options.provider.stream(request, signal);
+        const stream = this.options.retryPolicy === undefined
+          ? openStream()
+          : withModelRetry(
+              openStream,
+              this.options.retryPolicy,
+              signal,
+              (event) => this.emit({ type: "retrying", ...event }),
+            );
 
         for await (const event of stream) {
           if (signal.aborted) {

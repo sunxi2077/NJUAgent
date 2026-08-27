@@ -403,19 +403,19 @@ Run context, runner, history, and full tests; commit as `feat: bound conversatio
 **Interfaces:**
 - Produces: `withModelRetry(openStream, policy, signal, onRetry)` and typed `ProviderError` with `retryable` and optional `retryAfterMs`.
 
-- [ ] **Step 1: Write failing retry tests**
+- [x] **Step 1: Write failing retry tests**
 
 Use injected zero-delay sleep. Assert two retryable failures followed by success make three attempts; auth/invalid-request errors make one; abort stops immediately; attempts never exceed three.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/providers/retry.test.ts`.
 
-- [ ] **Step 3: Implement retry before history mutation**
+- [x] **Step 3: Implement retry before history mutation**
 
 Use exponential delays with injectable jitter, respect larger `Retry-After`, emit retry events, and never append a partial assistant message.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run focused, runner, and full tests; commit as `feat: retry transient model failures`.
 

@@ -5,6 +5,7 @@ export type AgentEvent =
   | { type: "text_delta"; text: string }
   | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "model_completed"; stopReason: string }
+  | { type: "retrying"; attempt: number; delayMs: number; reason: string }
   | { type: "tool_started"; id: string; name: string }
   | {
       type: "tool_completed";

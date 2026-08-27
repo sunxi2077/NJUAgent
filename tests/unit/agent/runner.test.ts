@@ -8,6 +8,7 @@ import type {
   ModelRequest,
   ProviderEvent,
 } from "../../../src/providers/provider.js";
+import { ProviderError } from "../../../src/providers/provider.js";
 import type { AssistantMessage } from "../../../src/agent/messages.js";
 
 function textAssistant(text: string): AssistantMessage {
@@ -330,5 +331,39 @@ describe("AgentRunner", () => {
 
     expect(result).toMatchObject({ status: "context_limit", steps: 0, toolCalls: 0 });
     expect(provider.requests).toHaveLength(0);
+  });
+
+  test("retries transient provider failures and emits retry events", async () => {
+    let attempts = 0;
+    const provider: ModelProvider = {
+      async *stream() {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new ProviderError("temporary outage", { retryable: true });
+        }
+        yield complete(textAssistant("recovered"));
+      },
+    };
+    const events: AgentEvent[] = [];
+    const runner = new AgentRunner({
+      provider,
+      history: new ConversationHistory(),
+      tools: emptyTools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+      retryPolicy: {
+        maxAttempts: 3,
+        baseDelayMs: 0,
+        maxDelayMs: 0,
+        jitterRatio: 0,
+      },
+      onEvent: (event) => events.push(event),
+    });
+
+    const result = await runner.run("retry", new AbortController().signal);
+
+    expect(result.status).toBe("completed");
+    expect(attempts).toBe(3);
+    expect(events.filter((event) => event.type === "retrying")).toHaveLength(2);
   });
 });
