@@ -454,23 +454,23 @@ Run focused, typecheck, and full tests; commit as `feat: add Anthropic-compatibl
 **Interfaces:**
 - Produces: `Renderer.handle(event)`, `Prompt.read()`, `Prompt.confirm()`, `CliSession.start()`.
 
-- [ ] **Step 1: Write failing plain-renderer tests**
+- [x] **Step 1: Write failing plain-renderer tests**
 
 Inject memory stdout with `isTTY=false`. Assert text deltas, tool start/end, retry, command output, and final status become newline-safe plain records with no ANSI bytes.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `npm test -- tests/unit/cli/renderer.test.ts`.
 
-- [ ] **Step 3: Implement permanent and transient rendering**
+- [x] **Step 3: Implement permanent and transient rendering**
 
 Use picocolors only when TTY and `NO_COLOR` is absent. Clear the transient status before permanent writes and restore it afterward. Apply UI output budget separately from model-result budget.
 
-- [ ] **Step 4: Write and implement session cancellation tests**
+- [x] **Step 4: Write and implement session cancellation tests**
 
 Inject prompt and runner fakes at their public boundary. Assert Ctrl-C during a run aborts that run and returns to input; Ctrl-C at idle or `/exit` ends the session; a second concurrent run cannot begin.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run CLI tests and full suite; commit as `feat: add streaming terminal session`.
 
