@@ -20,6 +20,8 @@ describe("CLI help", () => {
     expect(HELP_TEXT).toContain("--workspace");
     expect(HELP_TEXT).toContain("--permission-mode");
     expect(HELP_TEXT).toContain("ANTHROPIC_API_KEY");
+    expect(HELP_TEXT).toContain("NJU_AGENT_HOME");
+    expect(HELP_TEXT).toContain("NO_COLOR");
     expect(HELP_TEXT).toContain("/exit");
   });
 });

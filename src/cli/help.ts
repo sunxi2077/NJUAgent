@@ -10,10 +10,12 @@ Options:
   --debug                      Print sanitized startup diagnostics
   -h, --help                   Show this help without requiring API credentials
 
-Required environment:
-  ANTHROPIC_API_KEY
-  ANTHROPIC_BASE_URL
-  MODEL_ID
+Environment:
+  ANTHROPIC_API_KEY            API key; environment only, never stored on disk
+  ANTHROPIC_BASE_URL           e.g. https://api.deepseek.com/anthropic
+  MODEL_ID                     model name supported by the endpoint
+  NJU_AGENT_HOME               application home (default ~/.nju-agent)
+  NO_COLOR                     disable colors and cursor control when set
 
 Interactive commands:
   /exit                        Exit the session

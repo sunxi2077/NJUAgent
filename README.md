@@ -19,18 +19,23 @@ npm run build
 
 ## Configuration
 
-All configuration comes from environment variables; the only supported CLI flags are `--workspace`, `--permission-mode` and `--debug`. Copy `.env.example` and export the values (the program reads the process environment, not `.env`).
+NJUAgent is a normal command-line application: configuration comes from environment variables plus an optional per-user config file, and the only supported CLI flags are `--workspace`, `--permission-mode` and `--debug`. Copy `.env.example` and export the values (the program reads the process environment, not `.env`).
+
+On first run (TTY only), missing Base URL or Model triggers an interactive setup that saves only those non-secret values — Base URL, Model, and permission mode — to `config.json` under the application home (`NJU_AGENT_HOME`, default `~/.nju-agent`). `ANTHROPIC_API_KEY` is read **only** from the process environment and is never written to disk.
 
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | yes | — | API key (never committed or logged) |
-| `ANTHROPIC_BASE_URL` | yes | — | e.g. `https://api.deepseek.com/anthropic` |
-| `MODEL_ID` | yes | — | model name supported by the endpoint |
+| `ANTHROPIC_API_KEY` | yes | — | API key; environment only, never stored on disk |
+| `ANTHROPIC_BASE_URL` | yes* | — | e.g. `https://api.deepseek.com/anthropic` |
+| `MODEL_ID` | yes* | — | model name supported by the endpoint |
+| `NJU_AGENT_HOME` | no | `~/.nju-agent` | application home (config, sessions, skills) |
 | `AGENT_MAX_STEPS` | no | `20` | max model requests per user turn |
 | `AGENT_MAX_TOKENS` | no | `4096` | `max_tokens` sent to the model |
 | `COMMAND_TIMEOUT_MS` | no | `120000` | default `run_command` timeout |
 | `TOOL_OUTPUT_MAX_BYTES` | no | `32768` | max tool output returned to the model |
 | `UI_OUTPUT_MAX_BYTES` | no | `65536` | maximum command output shown live per tool call |
+
+`*` Base URL and Model may come from the persisted config instead of the environment (saved by setup); the API Key always comes from the environment.
 
 ## Usage
 
