@@ -13,7 +13,7 @@ export type CliSessionOptions = {
   runTurn: RunTurn;
 };
 
-const INPUT_PROMPT = "nju-agent> ";
+const INPUT_PROMPT = "› ";
 const EXIT_COMMAND = "/exit";
 
 export class CliSession {

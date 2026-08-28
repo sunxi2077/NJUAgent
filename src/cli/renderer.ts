@@ -4,6 +4,7 @@ import type { AgentEvent } from "../agent/events.js";
 import type { RunResult } from "../agent/result.js";
 import type { ToolExecutionRequest, ToolOutputStream } from "../tools/tool.js";
 import { LiveOutputLimiter } from "./output-limiter.js";
+import type { Prompt } from "./prompt.js";
 
 export interface Renderer {
   handle(event: AgentEvent): void;
@@ -28,6 +29,8 @@ export type TerminalRendererOptions = {
   maxLiveOutputBytes?: number;
   /** Terminal styles; defaults to the interactive decision. */
   theme?: TerminalTheme;
+  /** Coordinates writes with a live readline prompt (suspend/resume redraw). */
+  inputSurface?: Pick<Prompt, "suspendForOutput" | "resumeAfterOutput">;
 };
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -45,6 +48,7 @@ export class TerminalRenderer implements Renderer {
   readonly #liveOutputLimiter: LiveOutputLimiter;
   readonly #liveOutputLimit: number;
   readonly #theme: TerminalTheme;
+  readonly #inputSurface: TerminalRendererOptions["inputSurface"];
   #transient = "";
   /** Whether streamed model text is on screen without a trailing newline. */
   #streamingText = false;
@@ -58,6 +62,7 @@ export class TerminalRenderer implements Renderer {
     this.#liveOutputLimit = options.maxLiveOutputBytes ?? DEFAULT_MAX_LIVE_OUTPUT_BYTES;
     this.#liveOutputLimiter = new LiveOutputLimiter(this.#liveOutputLimit);
     this.#theme = options.theme ?? createTheme({ enabled: this.#interactive });
+    this.#inputSurface = options.inputSurface;
   }
 
   handle(event: AgentEvent): void {
@@ -242,12 +247,17 @@ export class TerminalRenderer implements Renderer {
 
   #permanent(text: string): void {
     this.#flushStreamingText();
-    if (this.#transient !== "") {
-      this.#clearLine();
-    }
-    this.#stdout.write(`${text}\n`);
-    if (this.#transient !== "") {
-      this.#stdout.write(`${this.#spinner()} ${this.#transient}`);
+    this.#inputSurface?.suspendForOutput();
+    try {
+      if (this.#transient !== "") {
+        this.#clearLine();
+      }
+      this.#stdout.write(`${text}\n`);
+      if (this.#transient !== "") {
+        this.#stdout.write(`${this.#spinner()} ${this.#transient}`);
+      }
+    } finally {
+      this.#inputSurface?.resumeAfterOutput();
     }
   }
 

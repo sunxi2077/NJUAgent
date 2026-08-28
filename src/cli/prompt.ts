@@ -1,4 +1,9 @@
-import { createInterface, type Interface } from "node:readline";
+import {
+  clearLine,
+  createInterface,
+  cursorTo,
+  type Interface,
+} from "node:readline";
 
 import type { ToolExecutionRequest } from "../tools/tool.js";
 
@@ -11,6 +16,10 @@ export interface Prompt {
   onSigint(handler: () => void): void;
   /** Resolves any pending read as `null`, releasing a waiting prompt. */
   interrupt(): void;
+  /** Clears the live prompt line so external output can be written cleanly. */
+  suspendForOutput(): void;
+  /** Redraws the prompt after external output; no-op when no read is pending. */
+  resumeAfterOutput(): void;
   /** Releases terminal resources. */
   close(): void;
 }
@@ -19,20 +28,26 @@ export type ReadlinePromptOptions = {
   input: NodeJS.ReadableStream;
   output: NodeJS.WritableStream;
   terminal: boolean;
+  /** Test seam: replaces the readline interface factory. */
+  interfaceFactory?: typeof createInterface;
 };
 
 export class ReadlinePrompt implements Prompt {
   readonly #rl: Interface;
   readonly #output: NodeJS.WritableStream;
   readonly #installProcessSigint: boolean;
+  readonly #terminal: boolean;
   #pending: ((value: string | null) => void) | null = null;
   #sigintHandler: (() => void) | null = null;
+  #suspended = false;
   #closed = false;
 
   constructor(options: ReadlinePromptOptions) {
     this.#output = options.output;
+    this.#terminal = options.terminal;
     this.#installProcessSigint = !options.terminal;
-    this.#rl = createInterface({
+    const factory = options.interfaceFactory ?? createInterface;
+    this.#rl = factory({
       input: options.input,
       output: options.output,
       terminal: options.terminal,
@@ -62,7 +77,8 @@ export class ReadlinePrompt implements Prompt {
   };
 
   read(promptText: string): Promise<string | null> {
-    this.#output.write(promptText);
+    this.#rl.setPrompt(promptText);
+    this.#rl.prompt(true);
     return new Promise((resolve) => {
       this.#pending = resolve;
     });
@@ -86,6 +102,23 @@ export class ReadlinePrompt implements Prompt {
     const pending = this.#pending;
     this.#pending = null;
     pending?.(null);
+  }
+
+  suspendForOutput(): void {
+    if (!this.#terminal || this.#pending === null || this.#suspended) {
+      return;
+    }
+    clearLine(this.#output, 0);
+    cursorTo(this.#output, 0);
+    this.#suspended = true;
+  }
+
+  resumeAfterOutput(): void {
+    if (!this.#suspended) {
+      return;
+    }
+    this.#suspended = false;
+    this.#rl.prompt(true);
   }
 
   close(): void {

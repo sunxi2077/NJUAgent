@@ -55,6 +55,10 @@ class FakePrompt implements Prompt {
     }
   }
 
+  suspendForOutput(): void {}
+
+  resumeAfterOutput(): void {}
+
   close(): void {
     this.closed = true;
   }
