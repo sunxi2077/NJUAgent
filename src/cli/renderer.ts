@@ -142,7 +142,7 @@ export class TerminalRenderer implements Renderer {
         if (this.#interactive) {
           const summary = conciseToolSummary(event.summary);
           this.#permanent(
-            `${this.#theme.brand("⚙")} ${event.name}${summary === "" ? "" : ` · ${summary}`}`,
+            `${this.#theme.brandStrong("⚙")} ${event.name}${summary === "" ? "" : ` · ${summary}`}`,
           );
           this.#status(`${event.name}…`);
         } else {
@@ -251,7 +251,7 @@ export class TerminalRenderer implements Renderer {
       case "context_limit":
         return this.#theme.warning;
       case "cancelled":
-        return this.#theme.brand;
+        return this.#theme.brandStrong;
       case "model_failed":
       case "internal_failed":
         return this.#theme.error;
@@ -282,7 +282,7 @@ export class TerminalRenderer implements Renderer {
   #spinner(): string {
     const frame = SPINNER_FRAMES[this.#spinnerIndex % SPINNER_FRAMES.length] ?? "|";
     this.#spinnerIndex += 1;
-    return this.#theme.brand(frame);
+    return this.#theme.brandStrong(frame);
   }
 
   #permanent(text: string): void {

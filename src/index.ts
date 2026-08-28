@@ -17,7 +17,7 @@ import { CliSession } from "./cli/session.js";
 import { SlashCommandRouter } from "./cli/command-router.js";
 import { registerCoreCommands } from "./cli/commands/register-core-commands.js";
 import type { CommandContext } from "./cli/command.js";
-import { createTheme } from "./cli/theme.js";
+import { createTheme, shouldEnableTerminalTheme } from "./cli/theme.js";
 import { formatWelcome } from "./cli/welcome.js";
 import { ConfigError, resolveConfig, type AppConfig } from "./config.js";
 import { AppError, isAppError } from "./errors/app-error.js";
@@ -49,11 +49,6 @@ export type BootstrapDeps = {
   rendererFactory?: (options: TerminalRendererOptions) => Renderer;
   configStoreFactory?: (file: string) => ConfigStore;
 };
-
-function envNoColor(env: NodeJS.ProcessEnv): boolean {
-  const value = env.NO_COLOR;
-  return value !== undefined && value !== "";
-}
 
 function toInternalError(error: unknown): AppError {
   if (isAppError(error)) {
@@ -183,14 +178,14 @@ export async function main(deps: BootstrapDeps): Promise<number> {
 
   // 6. One-time welcome panel with an optional recent-session hint.
   // Clear the visible screen once before the welcome box, but only in a real
-  // TTY without NO_COLOR/CI; never emit the control sequence in non-TTY,
+  // TTY without NO_COLOR/dumb TERM; never emit the control sequence in non-TTY,
   // piped, or color-disabled output. `2J` clears the visible area without
   // wiping the terminal scrollback.
-  const interactive = isTTY && !envNoColor(env) && env.CI === undefined;
+  const interactive = shouldEnableTerminalTheme({ isTTY, env });
   if (interactive) {
     stdout.write("\x1b[2J\x1b[H");
   }
-  const theme = createTheme({ enabled: isTTY && !envNoColor(env) });
+  const theme = createTheme({ enabled: interactive });
   const recent = existingSessions[0];
   stdout.write(
     `${formatWelcome(

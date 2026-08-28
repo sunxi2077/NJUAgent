@@ -24,7 +24,7 @@ export function formatSessionList(options: {
 }): string {
   const { sessions, currentId, theme } = options;
   const rows = sessions.map((entry) => {
-    const marker = entry.id === currentId ? theme.brand("  (current)") : "";
+    const marker = entry.id === currentId ? theme.brandStrong("  (current)") : "";
     const title = truncateText(entry.title, TITLE_LIMIT);
     const workspace = truncateText(entry.workspaceRoot, WORKSPACE_LIMIT);
     return `${entry.id.slice(0, 8)}  ${title}  ${workspace}  ${entry.updatedAt}${marker}`;
@@ -54,7 +54,7 @@ function previewMessage(message: Message, theme: TerminalTheme): string {
       if (block.type === "text") {
         return truncateText(block.text, MESSAGE_PREVIEW_LIMIT);
       }
-      return theme.brand(`→ tool: ${block.name} (${block.id})`);
+      return theme.brandStrong(`→ tool: ${block.name} (${block.id})`);
     });
     return `assistant: ${parts.join(" | ") || "(no text)"}`;
   }
@@ -95,7 +95,7 @@ export function formatContextStatus(
 ): string {
   const number = (value: number) => value.toLocaleString("en-US");
   return [
-    theme.brand("Context (estimated)"),
+    theme.brandStrong("Context (estimated)"),
     `  input       ${number(status.estimatedTokens)} tokens`,
     `  compact at  ${number(status.thresholdTokens)}`,
     `  hard limit  ${number(status.hardInputTokens)}`,
@@ -114,7 +114,7 @@ export function formatSkillList(
 ): string {
   const { activeName, theme } = options;
   const rows = skills.map((skill) => {
-    const marker = skill.name === activeName ? theme.brand("  (active)") : "";
+    const marker = skill.name === activeName ? theme.brandStrong("  (active)") : "";
     return `${skill.name}  [${skill.source}]  ${truncateText(skill.description, 120)}${marker}`;
   });
   return `Skills (${skills.length}):\n${rows.join("\n")}`;

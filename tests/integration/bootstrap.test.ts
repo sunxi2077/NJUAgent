@@ -200,14 +200,14 @@ describe("bootstrap", () => {
     expect(stdout.text()).not.toContain("\x1b[2J");
   });
 
-  test("CI disables the clear sequence even on a TTY", async () => {
+  test("TERM=dumb disables the clear sequence even on a TTY", async () => {
     const { deps, stdout, prompt } = await makeDeps({
       isTTY: true,
       env: {
         ANTHROPIC_API_KEY: "key",
         ANTHROPIC_BASE_URL: "https://api.example.com/anthropic",
         MODEL_ID: "deepseek-v4-flash",
-        CI: "true",
+        TERM: "dumb",
       },
     });
     prompt.reads = [null];
