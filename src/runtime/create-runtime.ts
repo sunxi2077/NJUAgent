@@ -107,9 +107,11 @@ export async function createRuntime(
     maxSteps: deps.config.maxSteps,
     systemPrompt: buildSystemPrompt(),
     contextPolicy: new ContextPolicy({
-      maxEstimatedTokens: 48_000,
-      compactAtRatio: 0.7,
-      recentMessages: 10,
+      contextWindowTokens: deps.config.contextWindowTokens,
+      maxOutputTokens: deps.config.maxTokens,
+      safetyTokens: deps.config.contextSafetyTokens,
+      compactAtRatio: deps.config.contextCompactRatio,
+      recentMessages: deps.config.contextRecentMessages,
       charsPerToken: 4,
     }),
     retryPolicy: {
