@@ -71,17 +71,19 @@ export class ContextManager {
   }
 
   async prepare(input: ContextPrepareInput): Promise<PreparedContext> {
+    const covered = this.#state.checkpoint?.coveredMessageCount ?? 0;
+    const viewMessages = input.messages.slice(covered);
     const systemPrompt = this.#systemPromptWithSummary(input.baseSystemPrompt);
     const estimate = this.#policy.estimate({
       systemPrompt,
-      messages: input.messages,
+      messages: viewMessages,
       tools: input.tools,
     });
     if (estimate < this.#policy.thresholdTokens()) {
       return {
         action: "continue",
         systemPrompt,
-        messages: input.messages,
+        messages: viewMessages,
         estimatedTokens: estimate,
         compactedToolResults: 0,
       };
@@ -89,7 +91,7 @@ export class ContextManager {
 
     const deterministic = this.#policy.prepareDeterministic({
       systemPrompt,
-      messages: input.messages,
+      messages: viewMessages,
       tools: input.tools,
     });
     if (deterministic.estimatedTokens < this.#policy.thresholdTokens()) {
@@ -127,10 +129,11 @@ export class ContextManager {
     const oldCovered = this.#state.checkpoint?.coveredMessageCount ?? 0;
     const cut = this.#policy.selectCompactionCut(input.messages, oldCovered);
     if (cut === null) {
+      // Keep using the cumulative checkpoint view: summary plus the tail.
       return {
         action: "continue",
         systemPrompt,
-        messages: deterministic?.messages ?? input.messages,
+        messages: deterministic?.messages ?? input.messages.slice(oldCovered),
         estimatedTokens: estimate,
         compactedToolResults: deterministic?.compactedToolResults ?? 0,
         reason: NOTHING_TO_COMPACT,

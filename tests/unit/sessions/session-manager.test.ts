@@ -112,6 +112,16 @@ class FakeRuntime implements ActiveRuntime {
     };
   }
 
+  async compact() {
+    return {
+      action: "compacted" as const,
+      systemPrompt: "",
+      messages: [],
+      estimatedTokens: 0,
+      compactedToolResults: 0,
+    };
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
   }

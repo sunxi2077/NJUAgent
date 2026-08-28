@@ -22,6 +22,7 @@ function context(): CommandContext {
   return {
     renderer: new MemoryRenderer(),
     theme: createTheme({ enabled: false }),
+    signal: new AbortController().signal,
     sessionManager: {
       active: () => {
         throw new Error("unused");
@@ -32,6 +33,12 @@ function context(): CommandContext {
         throw new Error("unused");
       },
       resume: async () => {
+        throw new Error("unused");
+      },
+      contextStatus: () => {
+        throw new Error("unused");
+      },
+      compact: async () => {
         throw new Error("unused");
       },
     },

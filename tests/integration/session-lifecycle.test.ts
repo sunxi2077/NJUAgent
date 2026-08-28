@@ -224,6 +224,7 @@ describe("session lifecycle", () => {
         theme: createTheme({ enabled: false }),
         sessionManager: manager,
         store,
+        signal: new AbortController().signal,
       },
     });
     prompt.reads = ["/totally-unknown", "//help", null];
