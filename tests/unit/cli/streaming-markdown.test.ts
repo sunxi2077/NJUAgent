@@ -61,4 +61,70 @@ describe("StreamingMarkdownRenderer", () => {
     expect(renderer.push("hello").lineOpen).toBe(true);
     expect(renderer.push("\n").lineOpen).toBe(false);
   });
+
+  test("renders headings, lists and quotes", () => {
+    const result = render([
+      "## 主要问题\n",
+      "- first\n",
+      "* second\n",
+      "1. numbered\n",
+      "> quoted\n",
+      "### Smaller\n",
+    ]);
+    expect(result.visible).toBe([
+      "主要问题",
+      "────────",
+      "• first",
+      "• second",
+      "1. numbered",
+      "│ quoted",
+      "Smaller",
+      "",
+    ].join("\n"));
+  });
+
+  test("renders fragmented fenced code without parsing markdown inside", () => {
+    const result = render([
+      "`", "``ts\n",
+      "const value = **raw**;\n",
+      "`", "``\n",
+    ]);
+    expect(result.visible).toBe("  │ const value = **raw**;\n");
+    expect(result.visible).not.toContain("```ts");
+  });
+
+  test("flushes an unclosed fence and resets for the next segment", () => {
+    const renderer = new StreamingMarkdownRenderer(createTheme({ enabled: true }));
+    const first = renderer.push("```\ncode").text + renderer.flush().text;
+    renderer.reset();
+    const second = renderer.push("plain").text + renderer.flush().text;
+    expect(stripVTControlCharacters(first)).toBe("  │ code");
+    expect(stripVTControlCharacters(second)).toBe("plain");
+  });
+
+  test("caps synthesized heading dividers at 24 cells", () => {
+    const visible = render(["# " + "x".repeat(40) + "\n"]).visible;
+    expect(visible).toBe("x".repeat(40) + "\n" + "─".repeat(24) + "\n");
+  });
+
+  test("preserves a hash that is not followed by a heading space", () => {
+    expect(render(["#not-a-heading\n"]).visible).toBe("#not-a-heading\n");
+  });
+
+  test.each([1, 2, 3, 4, 5, 6])("renders heading level %i without raw hashes", (level) => {
+    const visible = render([`${"#".repeat(level)} Heading\n`]).visible;
+    expect(visible.startsWith("Heading\n")).toBe(true);
+    expect(visible).not.toContain("#");
+    expect(visible.includes("───────\n")).toBe(level <= 2);
+  });
+
+  test.each([
+    { chunks: ["#", "# Title\n"], expected: "Title\n─────\n" },
+    { chunks: ["-", " item\n"], expected: "• item\n" },
+    { chunks: ["1", ". item\n"], expected: "1. item\n" },
+    { chunks: [">", " quote\n"], expected: "│ quote\n" },
+    { chunks: ["`", "`", "`js\ncode\n", "```\n"], expected: "  │ code\n" },
+  ])("recognizes $chunks across block-prefix chunk boundaries", ({ chunks, expected }) => {
+    expect(render(chunks).visible).toBe(expected);
+  });
 });
