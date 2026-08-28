@@ -253,6 +253,7 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     runTurn: (text, signal) => sessionManager.runTurn(text, signal),
     router,
     commandContext,
+    inputPrompt: `${theme.userLabel("❯ You")}  `,
     flushBeforeExit: () => sessionManager.flush(),
   });
   await session.start();

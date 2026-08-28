@@ -10,6 +10,7 @@ import { CliSession, type RunTurn } from "../../../src/cli/session.js";
 class FakePrompt implements Prompt {
   readonly #pendingReads: Array<(value: string | null) => void> = [];
   readonly #queuedInputs: Array<string | null> = [];
+  readonly promptTexts: string[] = [];
   readCount = 0;
   confirmQuestions: string[] = [];
   confirmResult = true;
@@ -17,7 +18,8 @@ class FakePrompt implements Prompt {
   interrupted = false;
   closed = false;
 
-  read(_promptText: string): Promise<string | null> {
+  read(promptText: string): Promise<string | null> {
+    this.promptTexts.push(promptText);
     this.readCount += 1;
     const queued = this.#queuedInputs.shift();
     if (queued !== undefined) {
@@ -125,6 +127,26 @@ describe("CliSession", () => {
 
     expect(turns).toEqual(["fix the bug"]);
     expect(prompt.closed).toBe(true);
+  });
+
+  test("uses the injected input prompt for every read", async () => {
+    const prompt = new FakePrompt();
+    const renderer = new MemoryRenderer();
+    prompt.pushInput("task");
+    prompt.pushInput("/exit");
+    const session = new CliSession({
+      prompt,
+      renderer,
+      inputPrompt: "\x1b[36m❯ You\x1b[0m  ",
+      runTurn: async () => ({ status: "completed", steps: 1, toolCalls: 0, durationMs: 1 }),
+    });
+
+    await session.start();
+
+    expect(prompt.promptTexts).toEqual([
+      "\x1b[36m❯ You\x1b[0m  ",
+      "\x1b[36m❯ You\x1b[0m  ",
+    ]);
   });
 
   test("skips blank input and exits on EOF (null)", async () => {

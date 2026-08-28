@@ -76,6 +76,19 @@ describe("ReadlinePrompt", () => {
     await expect(pending).resolves.toBe("hello");
   });
 
+  test("forwards an ANSI-decorated prompt unchanged and still redraws via prompt(true)", async () => {
+    const { prompt, rl, output } = makePrompt();
+    const anchor = "\x1b[36m❯ You\x1b[0m  ";
+    const pending = prompt.read(anchor);
+
+    expect(rl.promptText).toBe(anchor);
+    expect(rl.promptCalls).toEqual([true]);
+    expect(output.text()).toBe("");
+
+    rl.emitLine("hello");
+    await expect(pending).resolves.toBe("hello");
+  });
+
   test("suspendForOutput clears the prompt line and resume redraws it", async () => {
     const { prompt, rl, output } = makePrompt();
     const pending = prompt.read("› ");

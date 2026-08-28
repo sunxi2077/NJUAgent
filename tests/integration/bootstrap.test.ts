@@ -36,8 +36,10 @@ class FakePrompt implements Prompt {
   confirmResult = true;
   readCalls = 0;
   closeCalls = 0;
+  readonly promptTexts: string[] = [];
 
-  read(_promptText: string): Promise<string | null> {
+  read(promptText: string): Promise<string | null> {
+    this.promptTexts.push(promptText);
     this.readCalls += 1;
     return Promise.resolve(this.reads.shift() ?? null);
   }
@@ -167,6 +169,8 @@ describe("bootstrap", () => {
     expect(text.match(/NJUAgent/gu)).toHaveLength(1);
     expect(text).not.toContain("\x1b[");
     expect(prompt.readCalls).toBeGreaterThan(0);
+    // Disabled theme is identity: the user anchor arrives without ANSI.
+    expect(prompt.promptTexts[0]).toBe("❯ You  ");
   });
 
   test("a real TTY clears the screen once before the welcome panel", async () => {
@@ -181,6 +185,9 @@ describe("bootstrap", () => {
     // appears exactly once per process start.
     expect(text.match(/\x1b\[2J\x1b\[H/gu)).toHaveLength(1);
     expect(text.indexOf("\x1b[2J\x1b[H")).toBeLessThan(text.indexOf("NJUAgent"));
+    // TTY theme styles the anchor; stripping ANSI still yields the same text.
+    expect(prompt.promptTexts[0]).toContain("\x1b[");
+    expect(prompt.promptTexts[0]!.replace(/\x1b\[[0-9;]*m/gu, "")).toBe("❯ You  ");
   });
 
   test("NO_COLOR disables the clear sequence even on a TTY", async () => {

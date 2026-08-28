@@ -15,10 +15,11 @@ export type CliSessionOptions = {
   runTurn: RunTurn;
   router?: SlashCommandRouter;
   commandContext?: CommandContext;
+  inputPrompt?: string;
   flushBeforeExit?: () => Promise<void>;
 };
 
-const INPUT_PROMPT = "› ";
+const DEFAULT_INPUT_PROMPT = "› ";
 const EXIT_COMMAND = "/exit";
 
 export class CliSession {
@@ -28,6 +29,7 @@ export class CliSession {
   readonly #router: SlashCommandRouter | undefined;
   readonly #commandContext: CommandContext | undefined;
   readonly #flushBeforeExit: (() => Promise<void>) | undefined;
+  readonly #inputPrompt: string;
   #current: AbortController | undefined;
   #exitRequested = false;
 
@@ -38,6 +40,7 @@ export class CliSession {
     this.#router = options.router;
     this.#commandContext = options.commandContext;
     this.#flushBeforeExit = options.flushBeforeExit;
+    this.#inputPrompt = options.inputPrompt ?? DEFAULT_INPUT_PROMPT;
   }
 
   async start(): Promise<void> {
@@ -47,7 +50,7 @@ export class CliSession {
       if (this.#exitRequested) {
         break;
       }
-      const text = await this.#prompt.read(INPUT_PROMPT);
+      const text = await this.#prompt.read(this.#inputPrompt);
       if (text === null || this.#exitRequested) {
         break;
       }
