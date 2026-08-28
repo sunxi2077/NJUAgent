@@ -149,7 +149,7 @@
 - [x] 估算或记录每轮 token 使用量。
 - [x] 大型工具输出先截断或压缩，避免直接塞满上下文。
 - [x] 上下文接近阈值时有明确策略：停止并说明，或摘要较早历史。
-- [ ] 摘要策略启用时保留当前任务、关键决定、已修改文件和未完成事项。
+- [x] 摘要策略启用时保留当前任务、关键决定、已修改文件和未完成事项。
 
 ### 4.3 可验证完成
 
@@ -171,14 +171,14 @@
 
 仅在 P0、P1 稳定并完成演示脚本后考虑：
 
-- [ ] 会话保存与恢复。
+- [x] 会话保存与恢复。
 - [ ] 更精确的 patch 工具。
 - [ ] Git diff 摘要。
 - [ ] 用户可配置的 allow/deny 权限规则。
 - [ ] 简单 todo/planning 工具。
-- [ ] 自动上下文摘要。
+- [x] 自动上下文摘要。
 
-本次项目暂不计划：GUI、多智能体、后台任务、MCP、Skills、长期记忆、任务 DAG、工作树并发和远程代码执行。
+第二阶段已经加入显式 Skills、Session 和上下文摘要。当前仍不计划：GUI、多智能体、后台任务、MCP、长期记忆、任务 DAG、工作树并发和远程代码执行。
 
 ## 6. 建议架构
 
@@ -318,7 +318,7 @@ CLI
 - [x] SessionManager（save-before-switch、回合检查点、dirty 语义、resume/createNew 原子替换）。
 - [x] SlashCommandRouter（`//` 转义、未知命令不达模型）。
 - [x] 会话/历史纯格式化（有界预览，不泄露完整工具输出）。
-- [x] `/help` `/status` `/sessions` `/resume` `/new` `/history` `/exit` 命令处理器。
+- [x] `/help` `/status` `/sessions` `/resume` `/new` `/history` `/setup` `/exit` 命令处理器。
 - [x] 端到端接线（默认会话、动态 runtime 重建、欢迎页最近会话提示、生命周期集成测试）。
 
 ### 上下文管理（stage-two-context-management）
@@ -338,3 +338,12 @@ CLI
 - [x] `/skills`（刷新后列出）与 `/skill <name>|off`（激活/停用，幂等）。
 - [x] Provider 错误分类（auth/rate_limit/unavailable/protocol/invalid_request → 稳定 AppError 码）与取消审计。
 - [x] 离线演示测试、文档与两分钟演示脚本（`docs/STAGE_TWO_DEMO.md`）。
+
+### Stage 2.1 验收修复
+
+- [x] 配置失败、EOF 和 Ctrl-C 路径正确关闭 Prompt 并刷新 dirty Session。
+- [x] 同进程 `/resume` 恢复 Skill 注入；`/setup` 保存非敏感配置并重建当前 Runtime。
+- [x] Provider usage 参与未压缩请求预算，`/context` 只估算 checkpoint 后的有效视图。
+- [x] 项目 Skill 路径统一为 `<workspace>/.nju-agent/skills/`。
+- [x] 欢迎页按终端宽度排版并使用南大紫层级；工具记录隐藏内部 ID 和原始 JSON。
+- [x] readline 缓存连续粘贴的输入行，不再静默丢弃后续命令。

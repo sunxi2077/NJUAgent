@@ -84,6 +84,7 @@ Input starting with `/` is handled locally and never reaches the model; use `//`
 /compact [focus]             Summarize the covered conversation
 /skills                      List available skills
 /skill <name>|off            Activate or deactivate a skill
+/setup                       Update model and permission configuration
 /exit                        Save the current session and exit
 ```
 
@@ -97,7 +98,7 @@ Token numbers are **estimates** (`CONTEXT_WINDOW_TOKENS` default 48,000, `CONTEX
 
 ### Skills
 
-A Skill is **plain prompt text**, not executable code: one `SKILL.md` per directory, with a minimal frontmatter (`name` and `description`), at most 32 KiB, under `$NJU_AGENT_HOME/skills/<name>/SKILL.md` (user) or `<workspace>/skills/<name>/SKILL.md` (project). Project skills override same-name user skills; symlink escapes and oversized files are rejected as warnings. Only explicit `/skill <name>` activates one skill per session (persisted and restored on resume); `/skill off` deactivates. Skill content cannot weaken workspace, permission, timeout, output, or credential policies.
+A Skill is **plain prompt text**, not executable code: one `SKILL.md` per directory, with a minimal frontmatter (`name` and `description`), at most 32 KiB, under `$NJU_AGENT_HOME/skills/<name>/SKILL.md` (user) or `<workspace>/.nju-agent/skills/<name>/SKILL.md` (project). Project skills override same-name user skills; symlink escapes and oversized files are rejected as warnings. Only explicit `/skill <name>` activates one skill per session (persisted and restored on resume); `/skill off` deactivates. Skill content cannot weaken workspace, permission, timeout, output, or credential policies.
 
 ## Architecture
 
@@ -160,13 +161,14 @@ Unit tests cover the runner loop, message invariants, workspace boundary, creden
 
 ## Limitations
 
-- Single agent, single workspace; no GUI, MCP, skills, background tasks or multi-agent orchestration.
-- Deterministic context compaction replaces old tool outputs with metadata placeholders; there is no semantic summarization.
+- Single agent, single active workspace; no GUI, MCP, background tasks or multi-agent orchestration.
+- Context accounting uses a conservative estimate plus the latest Provider usage; it is not an exact tokenizer calculation.
 - `edit_file` requires exact literal matches; there is no fuzzy or patch-based editing.
 - The agent's claims are only as good as the commands it actually ran; the UI never fabricates a "verified" badge.
 
 ## Documentation
 
 - Requirements baseline: `docs/PROJECT_REQUIREMENTS.md`
-- Design: `docs/superpowers/specs/2026-08-27-njuagent-design.md`
-- Implementation plan: `docs/superpowers/plans/2026-08-27-njuagent-implementation.md`
+- Stage One design: `docs/superpowers/specs/2026-08-27-njuagent-design.md`
+- Stage Two design: `docs/superpowers/specs/2026-08-28-stage-two-productization-design.md`
+- Stage Two acceptance fixes: `docs/superpowers/plans/2026-08-28-stage-two-acceptance-fixes.md`

@@ -18,9 +18,9 @@
 - 可选项目技能（用于 /skills 演示）：
 
   ```bash
-  mkdir -p /tmp/nju-demo/skills/test-first
+  mkdir -p /tmp/nju-demo/.nju-agent/skills/test-first
   printf -- '---\nname: test-first\ndescription: Write a failing test first.\n---\n\nWrite one focused failing test, observe it fail, then implement.\n' \
-    > /tmp/nju-demo/skills/test-first/SKILL.md
+    > /tmp/nju-demo/.nju-agent/skills/test-first/SKILL.md
   ```
 
 - 禁用系统通知；关闭无关终端标签页；录音从启动命令前一秒开始。
