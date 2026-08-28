@@ -27,3 +27,18 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/workspace/u);
   });
 });
+
+describe("buildSystemPrompt summary layer", () => {
+  test("has no summary marker when absent", () => {
+    expect(buildSystemPrompt()).not.toContain("<conversation_summary>");
+  });
+
+  test("emits exactly one delimited summary block when present", () => {
+    const prompt = buildSystemPrompt({ summary: "Fixed the parser; tests pass." });
+    expect(prompt.match(/<conversation_summary>/gu)).toHaveLength(1);
+    expect(prompt.match(/<\/conversation_summary>/gu)).toHaveLength(1);
+    expect(prompt).toContain("Fixed the parser; tests pass.");
+    // Base safety/workspace instructions remain before the summary.
+    expect(prompt.indexOf("Boundaries:")).toBeLessThan(prompt.indexOf("<conversation_summary>"));
+  });
+});

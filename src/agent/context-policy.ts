@@ -82,6 +82,10 @@ export class ContextPolicy implements ContextPolicyPort {
     );
   }
 
+  contextWindowTokens(): number {
+    return this.budget.contextWindowTokens;
+  }
+
   prepareDeterministic(input: EstimateInput): DeterministicContextView {
     const estimatedTokens = this.estimate(input);
     if (estimatedTokens < this.thresholdTokens()) {

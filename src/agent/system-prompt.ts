@@ -2,10 +2,11 @@
  * Stable behavioral guidance for the model. Safety boundaries (workspace,
  * permissions, timeouts, output budgets) are enforced by the host programs,
  * not requested from the model; the prompt only establishes work style and
- * truthful reporting.
+ * truthful reporting. An optional conversation summary is appended as a
+ * clearly delimited block after the base instructions.
  */
-export function buildSystemPrompt(): string {
-  return [
+export function buildSystemPrompt(options: { summary?: string } = {}): string {
+  const base = [
     "You are NJUAgent, a command-line coding agent working inside a single workspace directory.",
     "You complete programming tasks by inspecting and modifying files, searching code, and running commands through the provided tools.",
     "",
@@ -24,4 +25,8 @@ export function buildSystemPrompt(): string {
     "- Only access files inside the workspace. The host enforces this; never try to bypass it.",
     "- Never include credentials or secrets in file contents or replies.",
   ].join("\n");
+  if (options.summary === undefined || options.summary === "") {
+    return base;
+  }
+  return `${base}\n\n<conversation_summary>\n${options.summary}\n</conversation_summary>`;
 }
