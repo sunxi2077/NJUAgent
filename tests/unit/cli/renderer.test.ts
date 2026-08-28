@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { stripVTControlCharacters } from "node:util";
 
 import type { AgentEvent } from "../../../src/agent/events.js";
 import type { RunResult } from "../../../src/agent/result.js";
@@ -35,6 +36,28 @@ function result(status: RunResult["status"], extra: Partial<RunResult> = {}): Ru
     durationMs: 1234,
     ...extra,
   } as RunResult;
+}
+
+/** Deterministic textual wrappers so style-leak assertions are not ANSI-brittle. */
+function markerTheme() {
+  const identity = (text: string): string => text;
+  return {
+    enabled: true,
+    brandStrong: identity,
+    brandBorder: identity,
+    userLabel: identity,
+    assistantLabel: identity,
+    heading: identity,
+    code: identity,
+    quote: identity,
+    success: (text: string): string => `✔${text}`,
+    warning: identity,
+    error: identity,
+    muted: identity,
+    bold: (text: string): string => `«${text}»`,
+    italic: identity,
+    underline: identity,
+  } as const;
 }
 
 const toolCall: ToolExecutionRequest = {
@@ -277,5 +300,122 @@ describe("TerminalRenderer tool output", () => {
     renderer.toolOutput(toolCall, "stdout", "");
 
     expect(stdout.text()).toBe("");
+  });
+});
+
+describe("TerminalRenderer assistant anchors", () => {
+  test("prints one assistant anchor lazily for a text-producing model step", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "" });
+    renderer.handle({ type: "text_delta", text: "hello " });
+    renderer.handle({ type: "text_delta", text: "**world**" });
+    renderer.handle({ type: "model_completed", stopReason: "end_turn" });
+
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible.match(/◆ NJUAgent/gu)).toHaveLength(1);
+    expect(visible).toContain("hello world");
+    expect(visible).not.toContain("**");
+    expect(stdout.text()).toContain("\x1b[38;5;141m");
+  });
+
+  test("does not print an empty assistant anchor for direct tool use", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "model_completed", stopReason: "tool_use" });
+    renderer.handle({ type: "tool_started", id: "c1", name: "read_file", summary: "{\"path\":\"a.ts\"}" });
+    expect(stripVTControlCharacters(stdout.text())).not.toContain("◆ NJUAgent");
+  });
+
+  test("tool-separated text steps receive separate assistant anchors", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "I will inspect." });
+    renderer.handle({ type: "model_completed", stopReason: "tool_use" });
+    renderer.handle({ type: "tool_started", id: "c1", name: "read_file", summary: "{\"path\":\"a.ts\"}" });
+    renderer.handle({ type: "tool_completed", id: "c1", name: "read_file", ok: true, durationMs: 1 });
+    renderer.handle({ type: "model_started", step: 2 });
+    renderer.handle({ type: "text_delta", text: "Found it." });
+    expect(stripVTControlCharacters(stdout.text()).match(/◆ NJUAgent/gu)).toHaveLength(2);
+  });
+
+  test("plain mode keeps raw markdown delimiters in model records", () => {
+    const stdout = new MemoryStdout();
+    const renderer = plainRenderer(stdout);
+    renderer.handle({ type: "text_delta", text: "**bold**" });
+    renderer.handle({ type: "model_completed", stopReason: "end_turn" });
+    expect(stdout.text()).toContain("[model] **bold**\n");
+    expect(stdout.text()).not.toContain("\x1b[");
+  });
+
+  test("an unclosed inline style cannot color the run summary", () => {
+    const stdout = new MemoryStdout();
+    const renderer = new TerminalRenderer({
+      stdout,
+      isTTY: true,
+      noColor: false,
+      theme: markerTheme(),
+    });
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "**open" });
+    renderer.handle({ type: "model_completed", stopReason: "end_turn" });
+    renderer.handle({ type: "run_finished", result: result("completed") });
+    const raw = stdout.text();
+    // The bold marker is opened and closed within the streamed text itself.
+    expect(raw).toContain("«open»");
+    // No open style marker may leak into the run summary.
+    const summary = raw.slice(raw.indexOf("Completed"));
+    expect(summary).not.toContain("«");
+  });
+
+  test("an unclosed fence is flushed before a tool card", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "```ts\nconst x = 1;" });
+    renderer.handle({ type: "model_completed", stopReason: "tool_use" });
+    renderer.handle({
+      type: "tool_started",
+      id: "c1",
+      name: "read_file",
+      summary: "{\"path\":\"a.ts\"}",
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("  │ const x = 1;");
+    expect(visible).toContain("⚙ read_file · a.ts");
+  });
+
+  test("retry permanent text follows flushed model text", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "**pending" });
+    renderer.handle({ type: "retrying", attempt: 1, delayMs: 100, reason: "busy" });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("pending");
+    expect(visible).toContain("↻ retry attempt 1");
+    expect(visible.indexOf("pending")).toBeLessThan(visible.indexOf("retry attempt"));
+  });
+
+  test("multiple delta chunks still appear before run_finished", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "one " });
+    renderer.handle({ type: "text_delta", text: "two " });
+    renderer.handle({ type: "run_finished", result: result("completed") });
+    expect(stripVTControlCharacters(stdout.text())).toContain("one two");
+  });
+
+  test("a response already ending in newline does not gain duplicate model newlines", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.handle({ type: "text_delta", text: "done\n" });
+    renderer.handle({ type: "model_completed", stopReason: "end_turn" });
+    expect(stripVTControlCharacters(stdout.text())).not.toContain("done\n\n\n");
   });
 });

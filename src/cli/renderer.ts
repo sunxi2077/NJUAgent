@@ -1,4 +1,5 @@
 import { createTheme, type TerminalTheme } from "./theme.js";
+import { StreamingMarkdownRenderer } from "./streaming-markdown.js";
 
 import type { AgentEvent } from "../agent/events.js";
 import type { RunResult } from "../agent/result.js";
@@ -73,9 +74,12 @@ export class TerminalRenderer implements Renderer {
   readonly #liveOutputLimit: number;
   readonly #theme: TerminalTheme;
   readonly #inputSurface: TerminalRendererOptions["inputSurface"];
+  readonly #markdown: StreamingMarkdownRenderer;
   #transient = "";
+  /** Whether the `◆ NJUAgent` anchor has been written for the current step. */
+  #assistantLabelShown = false;
   /** Whether streamed model text is on screen without a trailing newline. */
-  #streamingText = false;
+  #modelLineOpen = false;
   /** Partial plain-mode model line waiting for a newline or completion. */
   #plainModelBuffer = "";
   #spinnerIndex = 0;
@@ -87,12 +91,16 @@ export class TerminalRenderer implements Renderer {
     this.#liveOutputLimiter = new LiveOutputLimiter(this.#liveOutputLimit);
     this.#theme = options.theme ?? createTheme({ enabled: this.#interactive });
     this.#inputSurface = options.inputSurface;
+    this.#markdown = new StreamingMarkdownRenderer(this.#theme);
   }
 
   handle(event: AgentEvent): void {
     switch (event.type) {
       case "model_started":
         if (this.#interactive) {
+          this.#assistantLabelShown = false;
+          this.#markdown.reset();
+          this.#modelLineOpen = false;
           this.#status(`model step ${event.step}…`);
         } else {
           this.#write(`[model] step ${event.step} started\n`);
@@ -100,27 +108,30 @@ export class TerminalRenderer implements Renderer {
         break;
       case "text_delta":
         if (this.#interactive) {
-          // Stream text inline as it arrives so the reply visibly grows
-          // instead of jumping into the scrollback only at completion.
-          if (this.#transient !== "") {
-            this.#clearLine();
-            this.#transient = "";
+          if (event.text === "") {
+            break;
           }
-          this.#stdout.write(event.text);
-          this.#streamingText = true;
+          if (!this.#assistantLabelShown) {
+            this.#assistantLabelShown = true;
+            this.#writeModelStream(`${this.#theme.assistantLabel("◆ NJUAgent")}\n\n`);
+          }
+          const rendered = this.#markdown.push(event.text);
+          this.#writeModelStream(rendered.text);
+          this.#modelLineOpen = rendered.lineOpen;
         } else {
           this.#writePlainModelDelta(event.text);
         }
         break;
       case "usage":
         if (this.#interactive) {
+          this.#flushModelText();
           this.#status(`in=${event.inputTokens} out=${event.outputTokens} tokens`);
         } else {
           this.#write(`[usage] in=${event.inputTokens} out=${event.outputTokens}\n`);
         }
         break;
       case "model_completed":
-        this.#flushStreamingText();
+        this.#flushModelText();
         this.#flushPlainModelText();
         if (this.#interactive) {
           this.#status(`${this.#theme.success("✓")} model completed (${event.stopReason})`);
@@ -130,6 +141,7 @@ export class TerminalRenderer implements Renderer {
         break;
       case "retrying":
         if (this.#interactive) {
+          this.#flushModelText();
           this.#permanent(
             this.#theme.warning(`↻ retry attempt ${event.attempt} in ${event.delayMs}ms: ${event.reason}`),
           );
@@ -138,7 +150,7 @@ export class TerminalRenderer implements Renderer {
         }
         break;
       case "tool_started":
-        this.#flushStreamingText();
+        this.#flushModelText();
         if (this.#interactive) {
           const summary = conciseToolSummary(event.summary);
           this.#permanent(
@@ -164,7 +176,7 @@ export class TerminalRenderer implements Renderer {
         }
         break;
       case "run_finished":
-        this.#flushStreamingText();
+        this.#flushModelText();
         this.#flushPlainModelText();
         this.#renderRunResult(event.result);
         break;
@@ -209,6 +221,7 @@ export class TerminalRenderer implements Renderer {
 
   error(message: string): void {
     if (this.#interactive) {
+      this.#flushModelText();
       this.#permanent(this.#theme.error(`✖ ${message}`));
       this.#status("");
     } else {
@@ -234,6 +247,8 @@ export class TerminalRenderer implements Renderer {
       if ("message" in result && result.message !== "") {
         this.#permanent(`  ${this.#theme.error(result.message)}`);
       }
+      // One blank line separates the run summary from the next readline prompt.
+      this.#permanent("");
       this.#status("");
       return;
     }
@@ -258,11 +273,40 @@ export class TerminalRenderer implements Renderer {
     }
   }
 
-  /** Completes an in-progress streamed text line so the next write starts fresh. */
-  #flushStreamingText(): void {
-    if (this.#streamingText) {
+  /**
+   * Flushes the streaming Markdown renderer at an output boundary: any pending
+   * inline style or fence is closed, and an unterminated model line gains its
+   * trailing newline so the next permanent write starts on a fresh line.
+   */
+  #flushModelText(): void {
+    if (!this.#interactive) {
+      return;
+    }
+    const remainder = this.#markdown.flush();
+    if (remainder.text !== "") {
+      this.#stdout.write(remainder.text);
+    }
+    this.#modelLineOpen = remainder.lineOpen;
+    if (this.#modelLineOpen) {
       this.#stdout.write("\n");
-      this.#streamingText = false;
+    }
+    this.#modelLineOpen = false;
+  }
+
+  /** Writes interactive model-stream bytes without forcing a newline. */
+  #writeModelStream(text: string): void {
+    if (text === "") {
+      return;
+    }
+    this.#inputSurface?.suspendForOutput();
+    try {
+      if (this.#transient !== "") {
+        this.#clearLine();
+        this.#transient = "";
+      }
+      this.#stdout.write(text);
+    } finally {
+      this.#inputSurface?.resumeAfterOutput();
     }
   }
 
@@ -270,7 +314,6 @@ export class TerminalRenderer implements Renderer {
     if (!this.#interactive) {
       return;
     }
-    this.#flushStreamingText();
     this.#transient = text;
     this.#clearLine();
     if (text === "") {
@@ -286,7 +329,6 @@ export class TerminalRenderer implements Renderer {
   }
 
   #permanent(text: string): void {
-    this.#flushStreamingText();
     this.#inputSurface?.suspendForOutput();
     try {
       if (this.#transient !== "") {
