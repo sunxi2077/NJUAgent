@@ -26,7 +26,10 @@ import { createRuntime } from "./runtime/create-runtime.js";
 import { SkillRegistry } from "./skills/skill-registry.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { SessionStore } from "./sessions/session-store.js";
-import { createEmptySession } from "./sessions/session-schema.js";
+import {
+  createEmptySession,
+  type PersistedSessionV1,
+} from "./sessions/session-schema.js";
 import { ConfigStore } from "./storage/config-store.js";
 import { resolveAppPaths } from "./storage/paths.js";
 import type { PersistedConfigV1 } from "./storage/config-store.js";
@@ -97,6 +100,7 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     output: stdout,
     terminal: isTTY,
   });
+  try {
   if (isTTY && missingNonSecret) {
     const saved = await runSetup({
       prompt,
@@ -152,10 +156,12 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     maxLiveOutputBytes: config.uiOutputMaxBytes,
     inputSurface: prompt,
   });
-  const runtimeDeps = { env, config, prompt, renderer };
+  let activeConfig = config;
+  const buildRuntime = (target: PersistedSessionV1) =>
+    createRuntime(target, { env, config: activeConfig, prompt, renderer });
   let initialRuntime;
   try {
-    initialRuntime = await createRuntime(initialSession, runtimeDeps);
+    initialRuntime = await buildRuntime(initialSession);
   } catch (error) {
     stderr.write(
       `nju-agent: cannot open workspace "${config.workspaceRoot}": ` +
@@ -166,16 +172,24 @@ export async function main(deps: BootstrapDeps): Promise<number> {
   }
   const skillRegistry = new SkillRegistry(
     paths.userSkillsDirectory,
-    path.join(config.workspaceRoot, "skills"),
+    path.join(config.workspaceRoot, ".nju-agent", "skills"),
   );
   const sessionManager = new SessionManager({
     initialRuntime,
     store: sessionStore,
-    runtimeFactory: (target) => createRuntime(target, runtimeDeps),
+    runtimeFactory: buildRuntime,
     registry: skillRegistry,
   });
 
   // 6. One-time welcome panel with an optional recent-session hint.
+  // Clear the visible screen once before the welcome box, but only in a real
+  // TTY without NO_COLOR/CI; never emit the control sequence in non-TTY,
+  // piped, or color-disabled output. `2J` clears the visible area without
+  // wiping the terminal scrollback.
+  const interactive = isTTY && !envNoColor(env) && env.CI === undefined;
+  if (interactive) {
+    stdout.write("\x1b[2J\x1b[H");
+  }
   const theme = createTheme({ enabled: isTTY && !envNoColor(env) });
   const recent = existingSessions[0];
   stdout.write(
@@ -191,6 +205,9 @@ export async function main(deps: BootstrapDeps): Promise<number> {
           : `${recent.id.slice(0, 8)} (${recent.title})`,
       },
       theme,
+      ((stdout as NodeJS.WritableStream & { columns?: number }).columns === undefined
+        ? {}
+        : { columns: (stdout as NodeJS.WritableStream & { columns: number }).columns }),
     )}\n`,
   );
 
@@ -212,6 +229,27 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     sessionManager,
     store: sessionStore,
     skillRegistry,
+    runSetup: async () => {
+      const saved = await runSetup({
+        prompt,
+        store,
+        defaults: {
+          baseURL: activeConfig.baseURL,
+          model: activeConfig.model,
+          permissionMode: activeConfig.permissionMode,
+        },
+      });
+      if (saved === null) {
+        return false;
+      }
+      const nextConfig = resolveConfig({ env, argv, persisted: saved, cwd });
+      activeConfig = nextConfig;
+      await sessionManager.reconfigure({
+        modelId: nextConfig.model,
+        permissionMode: nextConfig.permissionMode,
+      });
+      return true;
+    },
     signal: new AbortController().signal,
   };
   const session = new CliSession({
@@ -220,9 +258,13 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     runTurn: (text, signal) => sessionManager.runTurn(text, signal),
     router,
     commandContext,
+    flushBeforeExit: () => sessionManager.flush(),
   });
   await session.start();
   return 0;
+  } finally {
+    prompt.close();
+  }
 }
 
 const deps: BootstrapDeps = {

@@ -13,7 +13,7 @@ export function createSkillsCommand(): SlashCommand {
       const activeName = active === undefined ? null : active.name;
       if (skills.length === 0) {
         context.renderer.print(
-          `No skills found. Add them under $NJU_AGENT_HOME/skills/<name>/SKILL.md or <workspace>/skills/<name>/SKILL.md.`,
+          `No skills found. Add them under $NJU_AGENT_HOME/skills/<name>/SKILL.md or <workspace>/.nju-agent/skills/<name>/SKILL.md.`,
         );
       } else {
         context.renderer.print(

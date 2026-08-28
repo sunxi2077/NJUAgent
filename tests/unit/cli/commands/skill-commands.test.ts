@@ -6,6 +6,7 @@ import { createSkillsCommand } from "../../../../src/cli/commands/skills-command
 import type { Renderer } from "../../../../src/cli/renderer.js";
 import { createTheme } from "../../../../src/cli/theme.js";
 import type { Skill, SkillSource } from "../../../../src/skills/skill.js";
+import { AppError } from "../../../../src/errors/app-error.js";
 
 class MemoryRenderer implements Renderer {
   readonly printed: string[] = [];
@@ -42,6 +43,7 @@ function makeContext(overrides: {
   activateResult?: Skill;
   activateCalls?: string[];
   deactivateCalls?: number[];
+  deactivateError?: Error;
 } = {}) {
   const renderer = new MemoryRenderer();
   const services = {
@@ -78,6 +80,9 @@ function makeContext(overrides: {
       },
       deactivateSkill: async () => {
         services.deactivateCalls.push(1);
+        if (overrides.deactivateError !== undefined) {
+          throw overrides.deactivateError;
+        }
       },
     },
     store: {
@@ -140,7 +145,7 @@ describe("/skills", () => {
     const { context, renderer } = makeContext();
     await command.execute("", context);
     expect(renderer.printed[0]).toContain("$NJU_AGENT_HOME/skills");
-    expect(renderer.printed[0]).toContain("<workspace>/skills");
+    expect(renderer.printed[0]).toContain("<workspace>/.nju-agent/skills");
   });
 });
 
@@ -185,5 +190,17 @@ describe("/skill", () => {
     await command.execute("off", context);
     expect(services.deactivateCalls).toHaveLength(2);
     expect(renderer.printed.filter((line) => line.includes("deactivated"))).toHaveLength(2);
+  });
+
+  test("/skill off reports a persistence error without throwing", async () => {
+    const command = createSkillCommand();
+    const { context, renderer } = makeContext({
+      deactivateError: new AppError({ code: "SESSION_IO", userMessage: "disk full" }),
+    });
+
+    const result = await command.execute("off", context);
+
+    expect(result).toEqual({ kind: "continue", stateChanged: false });
+    expect(renderer.errors[0]).toContain("[SESSION_IO]");
   });
 });

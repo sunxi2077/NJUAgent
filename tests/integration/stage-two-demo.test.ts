@@ -163,7 +163,7 @@ async function makeManager(options: {
   const runtime = await createRuntime(session, deps);
   const registry = new SkillRegistry(
     paths.userSkillsDirectory,
-    path.join(workspace, "skills"),
+    path.join(workspace, ".nju-agent", "skills"),
   );
   await registry.refresh();
   const manager = new SessionManager({
@@ -217,7 +217,11 @@ describe("stage-two offline demonstration", () => {
     expect(manager.contextStatus().coveredMessageCount).toBe(covered);
 
     // 5. A project skill activates and its layer reaches the provider once.
-    await writeSkill(path.join(workspace, "skills"), "test-first", "test-first");
+    await writeSkill(
+      path.join(workspace, ".nju-agent", "skills"),
+      "test-first",
+      "test-first",
+    );
     await registry.refresh();
     const activated = await manager.activateSkill("test-first");
     expect(activated.source).toBe("project");

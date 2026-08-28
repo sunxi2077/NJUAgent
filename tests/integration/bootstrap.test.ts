@@ -35,6 +35,7 @@ class FakePrompt implements Prompt {
   reads: Array<string | null> = [];
   confirmResult = true;
   readCalls = 0;
+  closeCalls = 0;
 
   read(_promptText: string): Promise<string | null> {
     this.readCalls += 1;
@@ -49,7 +50,9 @@ class FakePrompt implements Prompt {
   interrupt(): void {}
   suspendForOutput(): void {}
   resumeAfterOutput(): void {}
-  close(): void {}
+  close(): void {
+    this.closeCalls += 1;
+  }
 }
 
 type Overrides = Partial<Omit<BootstrapDeps, "env" | "argv" | "stdout" | "stderr">> & {
@@ -118,7 +121,7 @@ describe("bootstrap", () => {
   });
 
   test("missing API Key prints CONFIG_MISSING_API_KEY and returns 1 without saving a key", async () => {
-    const { deps, stderr, home } = await makeDeps({
+    const { deps, stderr, home, prompt } = await makeDeps({
       env: {
         ANTHROPIC_BASE_URL: "https://api.example.com/anthropic",
         MODEL_ID: "deepseek-v4-flash",
@@ -130,6 +133,7 @@ describe("bootstrap", () => {
     expect(exitCode).toBe(1);
     expect(stderr.text()).toContain("CONFIG_MISSING_API_KEY");
     expect(stderr.text()).toContain("ANTHROPIC_API_KEY");
+    expect(prompt.closeCalls).toBe(1);
     await expect(readFile(path.join(home, "config.json"), "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -145,6 +149,7 @@ describe("bootstrap", () => {
     expect(exitCode).toBe(1);
     expect(stderr.text()).toContain("ANTHROPIC_BASE_URL");
     expect(prompt.readCalls).toBe(0);
+    expect(prompt.closeCalls).toBe(1);
   });
 
   test("valid config prints the welcome panel exactly once before the session ends", async () => {
@@ -162,5 +167,53 @@ describe("bootstrap", () => {
     expect(text.match(/NJUAgent/gu)).toHaveLength(1);
     expect(text).not.toContain("\x1b[");
     expect(prompt.readCalls).toBeGreaterThan(0);
+  });
+
+  test("a real TTY clears the screen once before the welcome panel", async () => {
+    const { deps, stdout, prompt } = await makeDeps({ isTTY: true });
+    prompt.reads = [null];
+
+    const exitCode = await main(deps);
+
+    expect(exitCode).toBe(0);
+    const text = stdout.text();
+    // Clear sequence (visible area only, cursor home) precedes the panel and
+    // appears exactly once per process start.
+    expect(text.match(/\x1b\[2J\x1b\[H/gu)).toHaveLength(1);
+    expect(text.indexOf("\x1b[2J\x1b[H")).toBeLessThan(text.indexOf("NJUAgent"));
+  });
+
+  test("NO_COLOR disables the clear sequence even on a TTY", async () => {
+    const { deps, stdout, prompt } = await makeDeps({
+      isTTY: true,
+      env: {
+        ANTHROPIC_API_KEY: "key",
+        ANTHROPIC_BASE_URL: "https://api.example.com/anthropic",
+        MODEL_ID: "deepseek-v4-flash",
+        NO_COLOR: "1",
+      },
+    });
+    prompt.reads = [null];
+
+    await main(deps);
+
+    expect(stdout.text()).not.toContain("\x1b[2J");
+  });
+
+  test("CI disables the clear sequence even on a TTY", async () => {
+    const { deps, stdout, prompt } = await makeDeps({
+      isTTY: true,
+      env: {
+        ANTHROPIC_API_KEY: "key",
+        ANTHROPIC_BASE_URL: "https://api.example.com/anthropic",
+        MODEL_ID: "deepseek-v4-flash",
+        CI: "true",
+      },
+    });
+    prompt.reads = [null];
+
+    await main(deps);
+
+    expect(stdout.text()).not.toContain("\x1b[2J");
   });
 });

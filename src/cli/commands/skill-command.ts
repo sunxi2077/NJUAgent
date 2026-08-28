@@ -13,9 +13,14 @@ export function createSkillCommand(): SlashCommand {
         return { kind: "continue", stateChanged: false };
       }
       if (trimmed === "off") {
-        await context.sessionManager.deactivateSkill();
-        context.renderer.print("Skill deactivated.");
-        return { kind: "continue", stateChanged: true };
+        try {
+          await context.sessionManager.deactivateSkill();
+          context.renderer.print("Skill deactivated.");
+          return { kind: "continue", stateChanged: true };
+        } catch (error) {
+          context.renderer.error(formatError(error, { debug: false }));
+          return { kind: "continue", stateChanged: false };
+        }
       }
       await context.skillRegistry.refresh();
       const resolved = context.skillRegistry.resolve(trimmed);

@@ -39,5 +39,6 @@ export type CommandContext = {
   >;
   store: Pick<SessionStore, "list">;
   skillRegistry: Pick<SkillRegistry, "refresh" | "list" | "resolve" | "diagnostics">;
+  runSetup?: () => Promise<boolean>;
   signal: AbortSignal;
 };

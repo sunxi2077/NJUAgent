@@ -10,12 +10,9 @@ import { createSkillCommand } from "./skill-command.js";
 import { createSkillsCommand } from "./skills-command.js";
 import { createSessionsCommand } from "./sessions-command.js";
 import { createStatusCommand } from "./status-command.js";
+import { createSetupCommand } from "./setup-command.js";
 
-/**
- * Registers the implemented core commands. Future plans add `/context`,
- * `/compact`, `/skills`, `/skill`, and `/setup`; this list reflects only
- * commands that are actually registered on the final branch.
- */
+/** Registers the complete local command surface. */
 export function registerCoreCommands(router: SlashCommandRouter): void {
   router.register(createHelpCommand(() => router.commands()));
   router.register(createStatusCommand());
@@ -27,5 +24,6 @@ export function registerCoreCommands(router: SlashCommandRouter): void {
   router.register(createCompactCommand());
   router.register(createSkillsCommand());
   router.register(createSkillCommand());
+  router.register(createSetupCommand());
   router.register(createExitCommand());
 }
