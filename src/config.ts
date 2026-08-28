@@ -109,7 +109,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
 export type ResolveConfigInput = {
   env: NodeJS.ProcessEnv;
   argv: readonly string[];
-  persisted?: PersistedConfigV1;
+  persisted?: PersistedConfigV1 | undefined;
   cwd: string;
 };
 

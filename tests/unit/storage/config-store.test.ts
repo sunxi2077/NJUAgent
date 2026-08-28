@@ -103,7 +103,10 @@ describe("ConfigStore", () => {
   });
 
   test("wraps filesystem failures as AppError with CONFIG_INVALID", async () => {
-    const store = new ConfigStore(path.join(await tempConfigFile(), "missing", "x.json"));
+    const file = await tempConfigFile();
+    // Occupy the path with a file so the nested path is structurally invalid.
+    await writeJsonAtomic(file, { placeholder: true });
+    const store = new ConfigStore(path.join(file, "missing", "x.json"));
     await expect(store.load()).rejects.toBeInstanceOf(AppError);
   });
 });

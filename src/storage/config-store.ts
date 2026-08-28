@@ -83,8 +83,9 @@ export class ConfigStore {
   }
 
   /**
-   * ENOENT counts as "no config yet" only when the parent directory exists;
-   * an unreadable path structure is an I/O failure, not an absent file.
+   * ENOENT counts as "no config yet" when the file is genuinely absent: the
+   * parent directory is missing (first run) or exists as a directory. An
+   * unreadable path structure (e.g. the parent is a file) is an I/O failure.
    */
   async #isMissingFile(error: unknown): Promise<boolean> {
     if (
@@ -96,10 +97,10 @@ export class ConfigStore {
       return false;
     }
     try {
-      await stat(path.dirname(this.#file));
-      return true;
+      const stats = await stat(path.dirname(this.#file));
+      return stats.isDirectory();
     } catch {
-      return false;
+      return true;
     }
   }
 
