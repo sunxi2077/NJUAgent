@@ -1,6 +1,16 @@
 import { describe, expect, test } from "vitest";
 
-import { ConfigError, loadConfig } from "../../src/config.js";
+import { ConfigError, loadConfig, resolveConfig } from "../../src/config.js";
+import type { PersistedConfigV1 } from "../../src/storage/config-store.js";
+
+function captureError(fn: () => void): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected the call to throw");
+}
 
 const validEnv = {
   ANTHROPIC_API_KEY: "sk-test",
@@ -8,18 +18,30 @@ const validEnv = {
   MODEL_ID: "deepseek-v3",
 };
 
-describe("loadConfig", () => {
-  test("reports all missing required variables by name without echoing values", () => {
-    expect(() => loadConfig({}, [])).toThrow(ConfigError);
-    expect(() => loadConfig({}, [])).toThrow(/ANTHROPIC_API_KEY/);
-    expect(() => loadConfig({}, [])).toThrow(/ANTHROPIC_BASE_URL/);
-    expect(() => loadConfig({}, [])).toThrow(/MODEL_ID/);
+const persisted: PersistedConfigV1 = {
+  schemaVersion: 1,
+  baseURL: "https://persisted.example/anthropic",
+  model: "persisted-model",
+  permissionMode: "cautious",
+};
+
+describe("loadConfig (compatibility wrapper)", () => {
+  test("missing API Key throws CONFIG_MISSING_API_KEY by name without echoing values", () => {
+    const error = captureError(() => loadConfig({}, []));
+    expect(error).toBeInstanceOf(ConfigError);
+    expect(error).toMatchObject({ code: "CONFIG_MISSING_API_KEY" });
+    expect(String(error)).toMatch(/ANTHROPIC_API_KEY/);
   });
 
-  test("reports only the variables that are missing", () => {
-    const error = () => loadConfig({ ANTHROPIC_API_KEY: "k", MODEL_ID: "m" }, []);
-    expect(error).toThrow(ConfigError);
-    expect(error).toThrow(/ANTHROPIC_BASE_URL/);
+  test("missing Base URL or Model is reported as incomplete non-secret configuration", () => {
+    const missingUrl = () =>
+      loadConfig({ ANTHROPIC_API_KEY: "k", MODEL_ID: "m" }, []);
+    expect(missingUrl).toThrow(ConfigError);
+    expect(missingUrl).toThrow(/ANTHROPIC_BASE_URL/);
+
+    const missingModel = () =>
+      loadConfig({ ANTHROPIC_API_KEY: "k", ANTHROPIC_BASE_URL: "https://x" }, []);
+    expect(missingModel).toThrow(/MODEL_ID/);
     expect(() => loadConfig({ ...validEnv }, [])).not.toThrow();
   });
 
@@ -93,5 +115,74 @@ describe("loadConfig", () => {
   test("rejects unknown options and options without a value", () => {
     expect(() => loadConfig(validEnv, ["--nope"])).toThrow(/Unknown option/u);
     expect(() => loadConfig(validEnv, ["--workspace"])).toThrow(/requires a value/u);
+  });
+});
+
+describe("resolveConfig", () => {
+  test("env overrides persisted values, and persisted fills the gaps", () => {
+    expect(resolveConfig({
+      env: {
+        ANTHROPIC_API_KEY: "env-key",
+        MODEL_ID: "env-model",
+      },
+      argv: [],
+      cwd: "/workspace",
+      persisted,
+    })).toMatchObject({
+      apiKey: "env-key",
+      baseURL: "https://persisted.example/anthropic",
+      model: "env-model",
+      permissionMode: "cautious",
+    });
+  });
+
+  test("API Key comes only from the environment and never from persisted config", () => {
+    const error = captureError(() =>
+      resolveConfig({ env: {}, argv: [], cwd: "/w", persisted }),
+    );
+    expect(error).toMatchObject({ code: "CONFIG_MISSING_API_KEY" });
+  });
+
+  test("missing Base URL and Model are reported separately as incomplete configuration", () => {
+    const missingUrl = captureError(() =>
+      resolveConfig({
+        env: { ANTHROPIC_API_KEY: "k" },
+        argv: [],
+        cwd: "/w",
+      }),
+    );
+    expect(missingUrl).toMatchObject({ code: "CONFIG_INVALID" });
+    expect(String(missingUrl)).toMatch(/ANTHROPIC_BASE_URL/u);
+
+    const missingModel = captureError(() =>
+      resolveConfig({
+        env: { ANTHROPIC_API_KEY: "k", ANTHROPIC_BASE_URL: "https://x" },
+        argv: [],
+        cwd: "/w",
+      }),
+    );
+    expect(missingModel).toMatchObject({ code: "CONFIG_INVALID" });
+    expect(String(missingModel)).toMatch(/MODEL_ID/u);
+  });
+
+  test("workspaceRoot falls back to the injected cwd", () => {
+    const config = resolveConfig({
+      env: validEnv,
+      argv: [],
+      cwd: "/injected/cwd",
+      persisted,
+    });
+    expect(config.workspaceRoot).toBe("/injected/cwd");
+    expect(config.permissionMode).toBe("cautious");
+  });
+
+  test("CLI permission mode overrides the persisted value", () => {
+    const config = resolveConfig({
+      env: validEnv,
+      argv: ["--permission-mode", "balanced"],
+      cwd: "/w",
+      persisted,
+    });
+    expect(config.permissionMode).toBe("balanced");
   });
 });

@@ -1,4 +1,5 @@
 import { AppError } from "./errors/app-error.js";
+import type { PersistedConfigV1 } from "./storage/config-store.js";
 
 export type PermissionMode = "balanced" | "cautious";
 
@@ -26,8 +27,6 @@ export class ConfigError extends AppError {
   }
 }
 
-const REQUIRED_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "MODEL_ID"] as const;
-
 const NUMERIC_DEFAULTS = {
   AGENT_MAX_STEPS: 20,
   COMMAND_TIMEOUT_MS: 120_000,
@@ -35,14 +34,6 @@ const NUMERIC_DEFAULTS = {
   UI_OUTPUT_MAX_BYTES: 65_536,
   AGENT_MAX_TOKENS: 4_096,
 } as const;
-
-function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
-  const value = env[name];
-  if (value === undefined || value.trim() === "") {
-    throw new ConfigError(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
 
 function readPositiveInt(
   env: NodeJS.ProcessEnv,
@@ -115,43 +106,73 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   return parsed;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv, argv: readonly string[]): AppConfig {
-  const args = parseArgs(argv);
+export type ResolveConfigInput = {
+  env: NodeJS.ProcessEnv;
+  argv: readonly string[];
+  persisted?: PersistedConfigV1;
+  cwd: string;
+};
 
-  const missing = REQUIRED_ENV.filter((name) => {
-    const value = env[name];
-    return value === undefined || value.trim() === "";
-  });
-  if (missing.length > 0) {
+export function resolveConfig(input: ResolveConfigInput): AppConfig {
+  const args = parseArgs(input.argv);
+
+  const apiKey = input.env.ANTHROPIC_API_KEY?.trim() ?? "";
+  if (apiKey === "") {
     throw new ConfigError(
-      `Missing required environment variable${missing.length === 1 ? "" : "s"}: ` +
-        missing.join(", "),
+      "Missing required environment variable: ANTHROPIC_API_KEY",
+      "CONFIG_MISSING_API_KEY",
+    );
+  }
+
+  const baseURL =
+    input.env.ANTHROPIC_BASE_URL?.trim() ||
+    input.persisted?.baseURL.trim() ||
+    "";
+  if (baseURL === "") {
+    throw new ConfigError(
+      "Incomplete non-secret configuration: set ANTHROPIC_BASE_URL or run setup.",
+    );
+  }
+
+  const model = input.env.MODEL_ID?.trim() || input.persisted?.model.trim() || "";
+  if (model === "") {
+    throw new ConfigError(
+      "Incomplete non-secret configuration: set MODEL_ID or run setup.",
     );
   }
 
   return {
-    apiKey: requireEnv(env, "ANTHROPIC_API_KEY"),
-    baseURL: requireEnv(env, "ANTHROPIC_BASE_URL"),
-    model: requireEnv(env, "MODEL_ID"),
-    maxTokens: readPositiveInt(env, "AGENT_MAX_TOKENS", NUMERIC_DEFAULTS.AGENT_MAX_TOKENS),
-    maxSteps: readPositiveInt(env, "AGENT_MAX_STEPS", NUMERIC_DEFAULTS.AGENT_MAX_STEPS),
+    apiKey,
+    baseURL,
+    model,
+    maxTokens: readPositiveInt(input.env, "AGENT_MAX_TOKENS", NUMERIC_DEFAULTS.AGENT_MAX_TOKENS),
+    maxSteps: readPositiveInt(input.env, "AGENT_MAX_STEPS", NUMERIC_DEFAULTS.AGENT_MAX_STEPS),
     commandTimeoutMs: readPositiveInt(
-      env,
+      input.env,
       "COMMAND_TIMEOUT_MS",
       NUMERIC_DEFAULTS.COMMAND_TIMEOUT_MS,
     ),
     toolOutputMaxBytes: readPositiveInt(
-      env,
+      input.env,
       "TOOL_OUTPUT_MAX_BYTES",
       NUMERIC_DEFAULTS.TOOL_OUTPUT_MAX_BYTES,
     ),
     uiOutputMaxBytes: readPositiveInt(
-      env,
+      input.env,
       "UI_OUTPUT_MAX_BYTES",
       NUMERIC_DEFAULTS.UI_OUTPUT_MAX_BYTES,
     ),
-    workspaceRoot: args.workspaceRoot ?? process.cwd(),
-    permissionMode: args.permissionMode ?? "balanced",
+    workspaceRoot: args.workspaceRoot ?? input.cwd,
+    permissionMode:
+      args.permissionMode ?? input.persisted?.permissionMode ?? "balanced",
     debug: args.debug,
   };
+}
+
+/**
+ * Temporary compatibility wrapper used by legacy tests and pre-bootstrap
+ * call sites; migrates to `resolveConfig` in the bootstrap task.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv, argv: readonly string[]): AppConfig {
+  return resolveConfig({ env, argv, cwd: process.cwd() });
 }
