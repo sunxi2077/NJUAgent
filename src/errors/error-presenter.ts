@@ -1,4 +1,5 @@
 import { AppError, isAppError } from "./app-error.js";
+import { ProviderError, providerKindToAppCode } from "../providers/provider.js";
 
 export type ErrorFormatOptions = {
   debug: boolean;
@@ -28,6 +29,10 @@ export function formatError(error: unknown, options: ErrorFormatOptions): string
       parts.push(error.stack);
     }
     return parts.join("\n");
+  }
+  if (error instanceof ProviderError) {
+    // Safe classified message; raw SDK details stay in `cause` only.
+    return `[${providerKindToAppCode(error.kind)}] ${error.message}`;
   }
   const message = error instanceof Error ? error.message : String(error);
   return options.debug ? message : message;

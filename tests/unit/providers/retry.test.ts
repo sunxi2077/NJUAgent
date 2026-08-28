@@ -28,7 +28,7 @@ describe("withModelRetry", () => {
         attempts += 1;
         return (async function* () {
           if (attempts < 3) {
-            throw new ProviderError("temporary", { retryable: true });
+            throw new ProviderError("temporary", { kind: "unavailable", retryable: true });
           }
           yield { type: "text_delta", text: "ok" } as const;
         })();
@@ -52,7 +52,7 @@ describe("withModelRetry", () => {
       () => {
         attempts += 1;
         return (async function* () {
-          throw new ProviderError("invalid api key", { retryable: false });
+          throw new ProviderError("invalid api key", { kind: "invalid_request", retryable: false });
         })();
       },
       policy,
@@ -72,7 +72,7 @@ describe("withModelRetry", () => {
       () => {
         attempts += 1;
         return (async function* () {
-          throw new ProviderError("still down", { retryable: true });
+          throw new ProviderError("still down", { kind: "unavailable", retryable: true });
         })();
       },
       policy,
@@ -94,7 +94,7 @@ describe("withModelRetry", () => {
       () => {
         attempts += 1;
         return (async function* () {
-          throw new ProviderError("limited", { retryable: true, retryAfterMs: 750 });
+          throw new ProviderError("limited", { kind: "rate_limit", retryable: true, retryAfterMs: 750 });
         })();
       },
       policy,

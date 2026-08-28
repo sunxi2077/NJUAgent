@@ -118,21 +118,47 @@ function mapError(error: unknown, signal: AbortSignal): Error {
     return new DOMException("Model request was cancelled", "AbortError");
   }
   if (error instanceof APIConnectionError) {
-    return new ProviderError(error.message, { retryable: true, cause: error });
+    return new ProviderError("Model service unavailable", {
+      kind: "unavailable",
+      retryable: true,
+      cause: error,
+    });
   }
   if (error instanceof APIError) {
-    const retryable = error.status === 408 || error.status === 409 || error.status === 429 ||
-      (typeof error.status === "number" && error.status >= 500);
+    const status = error.status;
     const retryAfter = retryAfterMs(error.headers);
-    return new ProviderError(error.message, {
-      retryable,
-      ...(retryAfter === undefined ? {} : { retryAfterMs: retryAfter }),
+    if (status === 401 || status === 403) {
+      return new ProviderError("Model authentication failed", {
+        kind: "auth",
+        retryable: false,
+        cause: error,
+      });
+    }
+    if (status === 429) {
+      return new ProviderError("Model rate limit reached", {
+        kind: "rate_limit",
+        retryable: true,
+        ...(retryAfter === undefined ? {} : { retryAfterMs: retryAfter }),
+        cause: error,
+      });
+    }
+    if (status === 408 || status === 409 || (typeof status === "number" && status >= 500)) {
+      return new ProviderError("Model service unavailable", {
+        kind: "unavailable",
+        retryable: true,
+        ...(retryAfter === undefined ? {} : { retryAfterMs: retryAfter }),
+        cause: error,
+      });
+    }
+    return new ProviderError("Model request rejected", {
+      kind: "invalid_request",
+      retryable: false,
       cause: error,
     });
   }
   return new ProviderError(
     error instanceof Error ? error.message : String(error),
-    { retryable: false, cause: error },
+    { kind: "protocol", retryable: false, cause: error },
   );
 }
 
@@ -150,6 +176,7 @@ function assembleMessage(blocks: ReadonlyMap<number, PendingBlock>): AssistantMe
         input = JSON.parse(block.partialJson) as unknown;
       } catch (error) {
         throw new ProviderError(`Malformed tool input JSON for ${block.name}`, {
+          kind: "protocol",
           retryable: false,
           cause: error,
         });
@@ -251,6 +278,7 @@ export class AnthropicProvider implements ModelProvider {
           case "message_stop": {
             if (stopReason === undefined) {
               throw new ProviderError("Message stopped without a stop reason", {
+                kind: "protocol",
                 retryable: false,
               });
             }
@@ -267,7 +295,8 @@ export class AnthropicProvider implements ModelProvider {
         }
       }
       if (!completed) {
-        throw new ProviderError("Anthropic stream ended without message_stop", {
+        throw new ProviderError("Model stream ended unexpectedly", {
+          kind: "protocol",
           retryable: false,
         });
       }

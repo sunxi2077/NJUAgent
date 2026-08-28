@@ -64,9 +64,13 @@ class FixtureClient implements AnthropicClientPort {
   }
 }
 
-async function collect(provider: AnthropicProvider, request: ModelRequest): Promise<ProviderEvent[]> {
+async function collect(
+  provider: AnthropicProvider,
+  request: ModelRequest,
+  signal: AbortSignal = new AbortController().signal,
+): Promise<ProviderEvent[]> {
   const events: ProviderEvent[] = [];
-  for await (const event of provider.stream(request, new AbortController().signal)) {
+  for await (const event of provider.stream(request, signal)) {
     events.push(event);
   }
   return events;
@@ -244,5 +248,55 @@ describe("AnthropicProvider", () => {
       name: "ProviderError",
       retryable,
     });
+  });
+
+  test.each([
+    [APIError.generate(401, {}, "unauthorized", new Headers()), "auth", false],
+    [APIError.generate(403, {}, "forbidden", new Headers()), "auth", false],
+    [APIError.generate(429, {}, "limited", new Headers({ "retry-after": "2" })), "rate_limit", true],
+    [APIError.generate(408, {}, "timeout", new Headers()), "unavailable", true],
+    [APIError.generate(409, {}, "conflict", new Headers()), "unavailable", true],
+    [APIError.generate(500, {}, "server", new Headers()), "unavailable", true],
+    [new APIConnectionError({ message: "offline", cause: new Error("network") }), "unavailable", true],
+    [APIError.generate(400, {}, "bad", new Headers()), "invalid_request", false],
+    [APIError.generate(404, {}, "missing", new Headers()), "invalid_request", false],
+    [APIError.generate(422, {}, "unprocessable", new Headers()), "invalid_request", false],
+  ])("classifies SDK failure %# as kind %s", async (failure, kind, retryable) => {
+    const provider = new AnthropicProvider({
+      model: "deepseek-test",
+      maxTokens: 2048,
+      client: new FixtureClient([], failure),
+    });
+
+    await expect(collect(provider, request())).rejects.toMatchObject({
+      name: "ProviderError",
+      kind,
+      retryable,
+    });
+  });
+
+  test("rate-limit respects Retry-After seconds", async () => {
+    const provider = new AnthropicProvider({
+      model: "deepseek-test",
+      maxTokens: 2048,
+      client: new FixtureClient([], APIError.generate(429, {}, "limited", new Headers({ "retry-after": "2" }))),
+    });
+    await expect(collect(provider, request())).rejects.toMatchObject({
+      kind: "rate_limit",
+      retryAfterMs: 2000,
+    });
+  });
+
+  test("abort surfaces as AbortError, never retried", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const provider = new AnthropicProvider({
+      model: "deepseek-test",
+      maxTokens: 2048,
+      client: new FixtureClient([], new Error("interrupted")),
+    });
+    await expect(
+      collect(provider, request(), controller.signal),
+    ).rejects.toBeInstanceOf(DOMException);
   });
 });
