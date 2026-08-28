@@ -321,7 +321,20 @@ CLI
 - [x] `/help` `/status` `/sessions` `/resume` `/new` `/history` `/exit` 命令处理器。
 - [x] 端到端接线（默认会话、动态 runtime 重建、欢迎页最近会话提示、生命周期集成测试）。
 
-### 待后续文档完成（尚未开始）
+### 上下文管理（stage-two-context-management）
 
-- [ ] 上下文管理（stage-two-context-management）：预算/估算/压缩器/ContextManager、`/context` `/compact`。
-- [ ] Skills 与发布（stage-two-skills-and-release）：SKILL.md 解析/发现/激活、`/skills` `/skill`、发布门禁。
+- [x] 上下文预算配置（`CONTEXT_WINDOW_TOKENS` 等四项，硬输入预算为正）。
+- [x] 全请求估算与确定性工具结果收缩、安全切割（不拆分 tool-call/result 对）。
+- [x] 无工具 ModelCompactor（固定摘要提示、有界 transcript、协议失败拒绝）。
+- [x] 事务性 ContextManager（commit-after-validate、失败回滚、硬限检查）。
+- [x] runner 接入 ContextManager 并持久化上下文状态（跨 resume 恢复）。
+- [x] `/context`（诚实地标注 estimates）与 `/compact [focus]`（可 Ctrl-C 取消）。
+
+### Skills 与发布（stage-two-skills-and-release）
+
+- [x] 严格有界 SKILL.md 解析（最小 frontmatter、名称/大小/描述限制）。
+- [x] 用户/项目 Skill 安全发现（符号链接防逃逸、读前大小检查、诊断隔离）与项目优先级。
+- [x] 分层系统提示（base → skill → summary）与显式单 Skill 激活持久化（resume 恢复/停用修复）。
+- [x] `/skills`（刷新后列出）与 `/skill <name>|off`（激活/停用，幂等）。
+- [x] Provider 错误分类（auth/rate_limit/unavailable/protocol/invalid_request → 稳定 AppError 码）与取消审计。
+- [x] 离线演示测试、文档与两分钟演示脚本（`docs/STAGE_TWO_DEMO.md`）。

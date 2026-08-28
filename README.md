@@ -80,12 +80,24 @@ Input starting with `/` is handled locally and never reaches the model; use `//`
 /resume <id>                 Resume a saved session (full UUID or unique prefix)
 /new                         Start a new session
 /history [1-100]             Show recent messages
+/context                     Show context budget and checkpoint status
+/compact [focus]             Summarize the covered conversation
+/skills                      List available skills
+/skill <name>|off            Activate or deactivate a skill
 /exit                        Save the current session and exit
 ```
 
 ### Sessions
 
-Each session is stored as one versioned JSON file under `$NJU_AGENT_HOME/sessions` (default `~/.nju-agent/sessions`), containing the complete valid message history, context checkpoint state, and run statistics. The API Key is never persisted. A corrupt session file is reported as a warning without blocking the other sessions. There is currently **no cross-session text search**.
+Each session is stored as one versioned JSON file under `$NJU_AGENT_HOME/sessions` (default `~/.nju-agent/sessions`), containing the complete valid message history, context checkpoint state, and run statistics. A new session starts on every launch (the welcome panel shows the most recent session with a `/resume` hint); the API Key is never persisted; a corrupt session file is reported as a warning without blocking the others. There is currently **no cross-session text search**.
+
+### Context
+
+Token numbers are **estimates** (`CONTEXT_WINDOW_TOKENS` default 48,000, `CONTEXT_COMPACT_RATIO` 0.70, `CONTEXT_SAFETY_TOKENS` 2,048). When the estimate crosses the compact threshold, old tool results are shrunk first; if that is not enough, a no-tools model call summarizes the newly covered prefix into a cumulative checkpoint. The complete transcript always stays in the session; every request carries the summary plus only the post-checkpoint tail, and never exceeds the hard input budget (`window − max_tokens − safety`). `/compact [focus]` forces a checkpoint (Ctrl-C cancels it); a failed or cancelled compaction keeps the previous checkpoint.
+
+### Skills
+
+A Skill is **plain prompt text**, not executable code: one `SKILL.md` per directory, with a minimal frontmatter (`name` and `description`), at most 32 KiB, under `$NJU_AGENT_HOME/skills/<name>/SKILL.md` (user) or `<workspace>/skills/<name>/SKILL.md` (project). Project skills override same-name user skills; symlink escapes and oversized files are rejected as warnings. Only explicit `/skill <name>` activates one skill per session (persisted and restored on resume); `/skill off` deactivates. Skill content cannot weaken workspace, permission, timeout, output, or credential policies.
 
 ## Architecture
 

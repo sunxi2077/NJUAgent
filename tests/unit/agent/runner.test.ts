@@ -442,7 +442,7 @@ describe("AgentRunner", () => {
       async *stream() {
         attempts += 1;
         if (attempts < 3) {
-          throw new ProviderError("temporary outage", { retryable: true });
+          throw new ProviderError("temporary outage", { kind: "unavailable", retryable: true });
         }
         yield complete(textAssistant("recovered"));
       },
