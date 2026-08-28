@@ -47,9 +47,24 @@ class FakeStore {
     return structuredClone(found);
   }
 
-  async list(): Promise<{ sessions: { id: string; title: string }[]; diagnostics: unknown[] }> {
+  async list(): Promise<{
+    sessions: {
+      id: string;
+      title: string;
+      workspaceRoot: string;
+      modelId: string;
+      updatedAt: string;
+    }[];
+    diagnostics: Array<{ file: string; message: string }>;
+  }> {
     return {
-      sessions: [...this.files.values()].map((s) => ({ id: s.id, title: s.title })),
+      sessions: [...this.files.values()].map((s) => ({
+        id: s.id,
+        title: s.title,
+        workspaceRoot: s.workspaceRoot,
+        modelId: s.modelId,
+        updatedAt: s.updatedAt,
+      })),
       diagnostics: [],
     };
   }
@@ -119,9 +134,9 @@ describe("SessionManager", () => {
     ["cancelled", "cancelled"],
     ["limit_reached", "limit_reached"],
     ["context_limit", "context_limit"],
-  ] as const)("a %s result updates stats and saves", async (status) => {
+  ] as const)("a %s result updates stats and saves", async (_label, status) => {
     const { manager, store, initialRuntime } = setup();
-    initialRuntime.nextResult = { status, steps: 2, toolCalls: 3, durationMs: 10 };
+    initialRuntime.nextResult = { status, steps: 2, toolCalls: 3, durationMs: 10 } as RunResult;
     await manager.runTurn("task", new AbortController().signal);
 
     const saved = store.files.get(ID)!;
