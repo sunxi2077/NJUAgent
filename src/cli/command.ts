@@ -1,4 +1,7 @@
+import type { SessionManager } from "../sessions/session-manager.js";
+import type { SessionStore } from "../sessions/session-store.js";
 import type { Renderer } from "./renderer.js";
+import type { TerminalTheme } from "./theme.js";
 
 export type CommandResult =
   | { kind: "continue"; stateChanged: boolean }
@@ -19,4 +22,10 @@ export interface SlashCommand {
 /** Capabilities available to slash-command handlers. */
 export type CommandContext = {
   renderer: Renderer;
+  theme: TerminalTheme;
+  sessionManager: Pick<
+    SessionManager,
+    "active" | "isDirty" | "flush" | "createNew" | "resume"
+  >;
+  store: Pick<SessionStore, "list">;
 };

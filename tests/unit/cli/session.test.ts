@@ -4,6 +4,7 @@ import type { RunResult } from "../../../src/agent/result.js";
 import type { Prompt } from "../../../src/cli/prompt.js";
 import type { Renderer } from "../../../src/cli/renderer.js";
 import { SlashCommandRouter } from "../../../src/cli/command-router.js";
+import { createTheme } from "../../../src/cli/theme.js";
 import { CliSession, type RunTurn } from "../../../src/cli/session.js";
 
 class FakePrompt implements Prompt {
@@ -71,6 +72,7 @@ class FakePrompt implements Prompt {
 
 class MemoryRenderer implements Renderer {
   readonly errors: string[] = [];
+  readonly printed: string[] = [];
   readonly events: string[] = [];
 
   handle(event: { type: string }): void {
@@ -78,6 +80,10 @@ class MemoryRenderer implements Renderer {
   }
 
   toolOutput(): void {}
+
+  print(text: string): void {
+    this.printed.push(text);
+  }
 
   error(message: string): void {
     this.errors.push(message);
@@ -260,7 +266,18 @@ describe("CliSession with command router", () => {
         return { status: "completed", steps: 1, toolCalls: 0, durationMs: 1 };
       },
       router,
-      commandContext: { renderer },
+      commandContext: {
+        renderer,
+        theme: createTheme({ enabled: false }),
+        sessionManager: {
+          active: () => { throw new Error("unused"); },
+          isDirty: () => false,
+          flush: async () => undefined,
+          createNew: async () => { throw new Error("unused"); },
+          resume: async () => { throw new Error("unused"); },
+        },
+        store: { list: async () => ({ sessions: [], diagnostics: [] }) },
+      },
     });
 
     await session.start();
@@ -284,7 +301,18 @@ describe("CliSession with command router", () => {
         return { status: "completed", steps: 1, toolCalls: 0, durationMs: 1 };
       },
       router,
-      commandContext: { renderer },
+      commandContext: {
+        renderer,
+        theme: createTheme({ enabled: false }),
+        sessionManager: {
+          active: () => { throw new Error("unused"); },
+          isDirty: () => false,
+          flush: async () => undefined,
+          createNew: async () => { throw new Error("unused"); },
+          resume: async () => { throw new Error("unused"); },
+        },
+        store: { list: async () => ({ sessions: [], diagnostics: [] }) },
+      },
     });
 
     await session.start();

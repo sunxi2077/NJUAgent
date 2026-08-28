@@ -13,6 +13,8 @@ export interface Renderer {
     stream: ToolOutputStream,
     text: string,
   ): void;
+  /** Writes a permanent, non-error text line (e.g. slash-command output). */
+  print(text: string): void;
   error(message: string): void;
 }
 
@@ -175,6 +177,10 @@ export class TerminalRenderer implements Renderer {
       return;
     }
     this.#plainLines(`[${stream}]`, limited.text);
+  }
+
+  print(text: string): void {
+    this.#permanent(text);
   }
 
   error(message: string): void {
