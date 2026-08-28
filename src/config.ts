@@ -1,3 +1,5 @@
+import { AppError } from "./errors/app-error.js";
+
 export type PermissionMode = "balanced" | "cautious";
 
 export type AppConfig = {
@@ -14,8 +16,14 @@ export type AppConfig = {
   debug: boolean;
 };
 
-export class ConfigError extends Error {
+export class ConfigError extends AppError {
   override readonly name = "ConfigError";
+  constructor(
+    message: string,
+    code: "CONFIG_INVALID" | "CONFIG_MISSING_API_KEY" = "CONFIG_INVALID",
+  ) {
+    super({ code, userMessage: message });
+  }
 }
 
 const REQUIRED_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "MODEL_ID"] as const;

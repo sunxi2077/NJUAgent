@@ -11,6 +11,7 @@ import { formatPermissionQuestion, ReadlinePrompt } from "./cli/prompt.js";
 import { TerminalRenderer } from "./cli/renderer.js";
 import { CliSession } from "./cli/session.js";
 import { ConfigError, loadConfig, type AppConfig } from "./config.js";
+import { formatError } from "./errors/error-presenter.js";
 import { AnthropicProvider } from "./providers/anthropic-provider.js";
 import {
   BalancedPermissionPolicy,
@@ -35,7 +36,7 @@ function tryLoadConfig(argv: readonly string[]): AppConfig | undefined {
     return loadConfig(process.env, argv);
   } catch (error) {
     if (error instanceof ConfigError) {
-      console.error(`nju-agent: ${error.message}`);
+      console.error(`nju-agent: ${formatError(error, { debug: false })}`);
       if (error.message.startsWith("Missing required environment variable")) {
         console.error("Set the required environment variables and try again.");
       } else {
@@ -181,9 +182,7 @@ async function main(): Promise<void> {
 
 void main().catch((error) => {
   console.error(
-    `nju-agent: internal failure: ${
-      error instanceof Error ? (error.stack ?? error.message) : String(error)
-    }`,
+    `nju-agent: internal failure: ${formatError(error, { debug: false })}`,
   );
   process.exitCode = 1;
 });
