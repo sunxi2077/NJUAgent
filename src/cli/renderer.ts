@@ -38,6 +38,28 @@ export type TerminalRendererOptions = {
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const DEFAULT_MAX_LIVE_OUTPUT_BYTES = 65_536;
 
+function conciseToolSummary(summary: string): string {
+  try {
+    const parsed = JSON.parse(summary) as unknown;
+    if (typeof parsed === "object" && parsed !== null) {
+      const record = parsed as Record<string, unknown>;
+      for (const key of ["path", "command", "query", "pattern"] as const) {
+        const value = record[key];
+        if (typeof value === "string" && value.trim() !== "") {
+          return value.length > 100 ? `${value.slice(0, 99)}…` : value;
+        }
+      }
+    }
+  } catch {
+    // Some tools already provide a human-readable summary.
+  }
+  return summary.length > 100 ? `${summary.slice(0, 99)}…` : summary;
+}
+
+function duration(ms: number): string {
+  return ms < 1_000 ? `${ms}ms` : `${(ms / 1_000).toFixed(1)}s`;
+}
+
 function envNoColor(): boolean {
   const value = process.env.NO_COLOR;
   return value !== undefined && value !== "";
@@ -118,8 +140,9 @@ export class TerminalRenderer implements Renderer {
       case "tool_started":
         this.#flushStreamingText();
         if (this.#interactive) {
+          const summary = conciseToolSummary(event.summary);
           this.#permanent(
-            `${this.#theme.brand(`⚙ ${event.name}`)} ${this.#theme.muted(event.summary)} (${event.id})`,
+            `${this.#theme.brand("⚙")} ${event.name}${summary === "" ? "" : ` · ${summary}`}`,
           );
           this.#status(`${event.name}…`);
         } else {
@@ -131,7 +154,7 @@ export class TerminalRenderer implements Renderer {
         if (this.#interactive) {
           const mark = event.ok ? this.#theme.success("✓") : this.#theme.error("✗");
           const name = event.ok ? event.name : this.#theme.error(event.name);
-          this.#permanent(`  ${mark} ${name} ${event.durationMs}ms`);
+          this.#permanent(`  ${mark} ${name} · ${duration(event.durationMs)}`);
           this.#status("");
         } else {
           const outcome = event.ok ? "ok" : "failed";
@@ -171,7 +194,8 @@ export class TerminalRenderer implements Renderer {
     if (this.#interactive) {
       for (const line of limited.text.split("\n")) {
         if (line !== "") {
-          this.#permanent(stream === "stderr" ? this.#theme.error(line) : line);
+          const content = stream === "stderr" ? this.#theme.error(line) : line;
+          this.#permanent(`  │ ${content}`);
         }
       }
       return;
@@ -195,8 +219,18 @@ export class TerminalRenderer implements Renderer {
   #renderRunResult(result: RunResult): void {
     const stats = `steps=${result.steps} tool_calls=${result.toolCalls} duration_ms=${result.durationMs}`;
     if (this.#interactive) {
-      const status = this.#statusColor(result.status)(result.status);
-      this.#permanent(`${status} ${stats}`);
+      const labels: Record<RunResult["status"], { symbol: string; label: string }> = {
+        completed: { symbol: "✓", label: "Completed" },
+        cancelled: { symbol: "–", label: "Cancelled" },
+        limit_reached: { symbol: "!", label: "Step limit reached" },
+        context_limit: { symbol: "!", label: "Context limit reached" },
+        model_failed: { symbol: "✗", label: "Model failed" },
+        internal_failed: { symbol: "✗", label: "Internal failure" },
+      };
+      const view = labels[result.status];
+      const toolLabel = `${result.toolCalls} tool call${result.toolCalls === 1 ? "" : "s"}`;
+      const summary = `${view.label} · ${result.steps} steps · ${toolLabel} · ${duration(result.durationMs)}`;
+      this.#permanent(`${this.#statusColor(result.status)(view.symbol)} ${summary}`);
       if ("message" in result && result.message !== "") {
         this.#permanent(`  ${this.#theme.error(result.message)}`);
       }

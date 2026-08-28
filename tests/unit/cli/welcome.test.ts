@@ -11,6 +11,8 @@ const view: WelcomeView = {
   permissionMode: "balanced",
 };
 
+const stripAnsi = (text: string) => text.replace(/\x1b\[[0-9;]*m/gu, "");
+
 describe("formatWelcome", () => {
   test("plain theme emits a single [session] line without ANSI", () => {
     const plain = formatWelcome(view, createTheme({ enabled: false }));
@@ -24,13 +26,38 @@ describe("formatWelcome", () => {
   });
 
   test("enabled theme renders a boxed panel with ANSI brand text", () => {
-    const colored = formatWelcome(view, createTheme({ enabled: true }));
-    expect(colored).toContain("NJUAgent");
-    expect(colored).toContain("workspace");
-    expect(colored).toContain("model");
-    expect(colored).toContain("session");
-    expect(colored).toContain("/help");
-    expect(colored).toContain("\x1b[");
+    const colored = formatWelcome(view, createTheme({ enabled: true }), { columns: 80 });
+    const lines = stripAnsi(colored).split("\n");
+    expect(lines[0]).toMatch(/^╭─ NJUAgent v0\.2\.0 /u);
+    expect(lines[1]).toContain("│ workspace  /tmp/demo");
+    expect(lines[2]).toContain("│ model      deepseek-v4-flash");
+    expect(lines[3]).toContain("│ session    abc123 · new · balanced");
+    expect(lines[4]).toMatch(/^╰─+╯$/u);
+    expect(lines[5]).toBe("Type /help for commands · Ctrl-C cancels");
+    expect([...lines[0]!]).toHaveLength(80);
+    expect(colored).toContain("\x1b[38;5;54m");
+    expect(colored).toContain("\x1b[38;5;141m");
+  });
+
+  test("caps a wide terminal and renders an actionable resume hint", () => {
+    const colored = formatWelcome(
+      { ...view, recentSession: "8e6a2f (fix parser)" },
+      createTheme({ enabled: true }),
+      { columns: 120 },
+    );
+    const lines = stripAnsi(colored).split("\n");
+    expect([...lines[0]!]).toHaveLength(88);
+    expect(lines.at(-1)).toBe("Use /resume 8e6a2f (fix parser) to continue.");
+  });
+
+  test("does not exceed a narrow terminal width", () => {
+    const colored = formatWelcome(
+      view,
+      createTheme({ enabled: true }),
+      { columns: 32 },
+    );
+    const lines = stripAnsi(colored).split("\n").slice(0, 5);
+    expect(lines.every((line) => [...line].length <= 32)).toBe(true);
   });
 
   test("truncates very long workspace and model values", () => {

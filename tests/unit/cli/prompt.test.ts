@@ -99,4 +99,15 @@ describe("ReadlinePrompt", () => {
     prompt.resumeAfterOutput();
     expect(output.text()).toBe("");
   });
+
+  test("queues lines pasted before the next sequential read", async () => {
+    const { prompt, rl } = makePrompt();
+    const first = prompt.read("› ");
+
+    rl.emitLine("/help");
+    rl.emitLine("/status");
+
+    await expect(first).resolves.toBe("/help");
+    await expect(prompt.read("› ")).resolves.toBe("/status");
+  });
 });

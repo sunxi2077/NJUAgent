@@ -239,6 +239,34 @@ describe("TerminalRenderer in TTY mode", () => {
     expect(text).toContain("reading now\n");
     expect(text).toContain("read_file");
   });
+
+  test("renders human-readable tool activity without internal ids or raw JSON", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+
+    renderer.handle({
+      type: "tool_started",
+      id: "internal-call-id",
+      name: "read_file",
+      summary: '{"path":"src/index.ts"}',
+    });
+    renderer.handle({
+      type: "tool_completed",
+      id: "internal-call-id",
+      name: "read_file",
+      ok: true,
+      durationMs: 12,
+    });
+    renderer.handle({ type: "run_finished", result: result("completed") });
+
+    const text = stdout.text();
+    expect(text).toContain("read_file · src/index.ts");
+    expect(text).toContain("Completed · 2 steps · 1 tool call · 1.2s");
+    expect(text).not.toContain("internal-call-id");
+    expect(text).not.toContain('{"path"');
+    expect(text).not.toContain("steps=");
+    expect(text).not.toContain("duration_ms=");
+  });
 });
 
 describe("TerminalRenderer tool output", () => {

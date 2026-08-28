@@ -39,6 +39,7 @@ export class ReadlinePrompt implements Prompt {
   readonly #terminal: boolean;
   #pending: ((value: string | null) => void) | null = null;
   #sigintHandler: (() => void) | null = null;
+  readonly #queuedLines: string[] = [];
   #suspended = false;
   #closed = false;
 
@@ -54,8 +55,12 @@ export class ReadlinePrompt implements Prompt {
     });
     this.#rl.on("line", (line) => {
       const pending = this.#pending;
-      this.#pending = null;
-      pending?.(line);
+      if (pending === null) {
+        this.#queuedLines.push(line);
+      } else {
+        this.#pending = null;
+        pending(line);
+      }
     });
     this.#rl.on("close", () => {
       const pending = this.#pending;
@@ -77,6 +82,13 @@ export class ReadlinePrompt implements Prompt {
   };
 
   read(promptText: string): Promise<string | null> {
+    if (this.#closed) {
+      return Promise.resolve(null);
+    }
+    const queued = this.#queuedLines.shift();
+    if (queued !== undefined) {
+      return Promise.resolve(queued);
+    }
     this.#rl.setPrompt(promptText);
     this.#rl.prompt(true);
     return new Promise((resolve) => {

@@ -9,9 +9,14 @@ export type WelcomeView = {
   recentSession?: string | undefined;
 };
 
-const MIN_FORMATTED_WIDTH = 60;
+export type WelcomeOptions = {
+  columns?: number;
+};
 
-/** Truncates a value without splitting surrogate pairs. */
+const DEFAULT_COLUMNS = 80;
+const MIN_BOX_WIDTH = 28;
+const MAX_BOX_WIDTH = 88;
+
 function truncate(value: string, maxChars: number): string {
   const chars = [...value];
   if (chars.length <= maxChars) {
@@ -20,51 +25,62 @@ function truncate(value: string, maxChars: number): string {
   return `${chars.slice(0, Math.max(0, maxChars - 1)).join("")}…`;
 }
 
-/** One-based index of the last column that fits within the width. */
-function contentWidth(width: number, padding = 4): number {
-  return Math.max(8, width - padding);
+function boxWidth(columns: number | undefined): number {
+  const available = Number.isFinite(columns)
+    ? Math.floor(columns ?? DEFAULT_COLUMNS)
+    : DEFAULT_COLUMNS;
+  return Math.max(MIN_BOX_WIDTH, Math.min(MAX_BOX_WIDTH, available));
 }
 
-/**
- * Formats the one-time startup panel. The plain theme emits newline records
- * including exactly one `[session]` line; the enabled theme renders a
- * restrained box with brand-colored text.
- */
-export function formatWelcome(view: WelcomeView, theme: TerminalTheme): string {
-  const title = `${theme.brand("NJUAgent")} v${view.version}`;
-  const workspace = truncate(view.workspace, contentWidth(MIN_FORMATTED_WIDTH));
-  const model = truncate(view.model, contentWidth(MIN_FORMATTED_WIDTH));
-  const sessionLine = `session: ${view.sessionShortId} · ${view.permissionMode}`;
-  const recentHint = view.recentSession === undefined
-    ? ""
-    : `\n${theme.muted(`continue? ${view.recentSession}`)}`;
-
+/** Formats the one-time startup panel and its plain record-mode fallback. */
+export function formatWelcome(
+  view: WelcomeView,
+  theme: TerminalTheme,
+  options: WelcomeOptions = {},
+): string {
   if (!theme.enabled) {
+    const valueWidth = Math.max(8, boxWidth(options.columns) - 12);
+    const recentHint = view.recentSession === undefined
+      ? []
+      : [`Use /resume ${view.recentSession} to continue.`];
     return [
-      title,
+      `NJUAgent v${view.version}`,
       `[session] ${view.sessionShortId}`,
-      `workspace: ${workspace}`,
-      `model: ${model}`,
+      `workspace: ${truncate(view.workspace, valueWidth)}`,
+      `model: ${truncate(view.model, valueWidth)}`,
       `permission mode: ${view.permissionMode}`,
       "Type /help for usage, or enter a task.",
-    ].join("\n") + recentHint;
+      ...recentHint,
+    ].join("\n");
   }
 
-  const lines = [
-    title,
-    `workspace: ${workspace}`,
-    `model: ${model}`,
-    sessionLine,
-    theme.muted("/help for usage, or enter a task."),
-  ];
-  const inner = Math.max(...lines.map((line) => [...line.replace(/\x1b\[[0-9;]*m/gu, "")].length));
-  const boxWidth = Math.max(MIN_FORMATTED_WIDTH, inner + 2);
-  const top = `┌${"─".repeat(boxWidth - 2)}┐`;
-  const bottom = `└${"─".repeat(boxWidth - 2)}┘`;
-  const rows = lines.map((line) => {
-    const visible = line.replace(/\x1b\[[0-9;]*m/gu, "");
-    const padding = Math.max(0, boxWidth - 2 - [...visible].length);
-    return `│ ${line}${" ".repeat(padding)}│`;
+  const width = boxWidth(options.columns);
+  const title = `NJUAgent v${view.version}`;
+  const titleFill = "─".repeat(Math.max(1, width - [...title].length - 5));
+  const top =
+    theme.brandBase("╭─ ") +
+    theme.brand(title) +
+    theme.brandBase(` ${titleFill}╮`);
+  const bottom = theme.brandBase(`╰${"─".repeat(width - 2)}╯`);
+  const valueWidth = Math.max(8, width - 14);
+  const values = [
+    ["workspace", truncate(view.workspace, valueWidth)],
+    ["model", truncate(view.model, valueWidth)],
+    ["session", `${view.sessionShortId} · new · ${view.permissionMode}`],
+  ] as const;
+  const rows = values.map(([label, value]) => {
+    const content = `${label.padEnd(11)}${truncate(value, valueWidth)}`;
+    const padding = " ".repeat(Math.max(0, width - 3 - [...content].length));
+    return theme.brandBase("│") + ` ${content}${padding}` + theme.brandBase("│");
   });
-  return [top, ...rows, bottom].join("\n") + recentHint;
+  const lines = [
+    top,
+    ...rows,
+    bottom,
+    theme.muted("Type /help for commands · Ctrl-C cancels"),
+  ];
+  if (view.recentSession !== undefined) {
+    lines.push(theme.muted(`Use /resume ${view.recentSession} to continue.`));
+  }
+  return lines.join("\n");
 }
