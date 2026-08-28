@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { ConversationHistory } from "../../../src/agent/history.js";
 import {
   assertValidHistory,
   type Message,
@@ -111,5 +112,28 @@ describe("assertValidHistory", () => {
     ];
 
     expect(() => assertValidHistory(history)).toThrow(/order.*call-2/i);
+  });
+});
+
+describe("ConversationHistory loading", () => {
+  test("loads a defensive copy of valid messages", () => {
+    const source: Message[] = [{ role: "user", content: [{ type: "text", text: "hello" }] }];
+    const history = ConversationHistory.from(source);
+    source[0]!.content[0] = { type: "text", text: "mutated" } as Message["content"][number];
+    expect(history.snapshot()[0]).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+    });
+    expect(history.length).toBe(1);
+  });
+
+  test("replace rejects an invalid tool-result sequence without changing history", () => {
+    const history = ConversationHistory.from([
+      { role: "user", content: [{ type: "text", text: "safe" }] },
+    ]);
+    expect(() => history.replace([
+      { role: "user", content: [{ type: "tool_result", toolCallId: "missing", content: "x", isError: false }] },
+    ])).toThrow();
+    expect(history.snapshot()).toHaveLength(1);
   });
 });

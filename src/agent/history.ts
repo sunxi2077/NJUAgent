@@ -9,6 +9,16 @@ import {
 export class ConversationHistory {
   readonly #messages: Message[] = [];
 
+  static from(messages: readonly Message[]): ConversationHistory {
+    const history = new ConversationHistory();
+    history.replace(messages);
+    return history;
+  }
+
+  get length(): number {
+    return this.#messages.length;
+  }
+
   appendUserText(text: string): void {
     this.append({ role: "user", content: [{ type: "text", text }] });
   }
@@ -19,6 +29,13 @@ export class ConversationHistory {
 
   appendToolResults(results: readonly ToolResultBlock[]): void {
     this.append({ role: "user", content: [...results] });
+  }
+
+  /** Validates a candidate set first; never partially replaces on failure. */
+  replace(messages: readonly Message[]): void {
+    const candidate = structuredClone(messages);
+    assertValidHistory(candidate);
+    this.#messages.splice(0, this.#messages.length, ...candidate);
   }
 
   snapshot(): Message[] {
