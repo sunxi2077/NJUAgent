@@ -1,4 +1,6 @@
 import type { RunResult } from "../agent/result.js";
+import type { CommandContext } from "./command.js";
+import type { SlashCommandRouter } from "./command-router.js";
 import type { Prompt } from "./prompt.js";
 import type { Renderer } from "./renderer.js";
 
@@ -11,6 +13,8 @@ export type CliSessionOptions = {
   prompt: Prompt;
   renderer: Renderer;
   runTurn: RunTurn;
+  router?: SlashCommandRouter;
+  commandContext?: CommandContext;
 };
 
 const INPUT_PROMPT = "› ";
@@ -20,6 +24,8 @@ export class CliSession {
   readonly #prompt: Prompt;
   readonly #renderer: Renderer;
   readonly #runTurn: RunTurn;
+  readonly #router: SlashCommandRouter | undefined;
+  readonly #commandContext: CommandContext | undefined;
   #current: AbortController | undefined;
   #exitRequested = false;
 
@@ -27,6 +33,8 @@ export class CliSession {
     this.#prompt = options.prompt;
     this.#renderer = options.renderer;
     this.#runTurn = options.runTurn;
+    this.#router = options.router;
+    this.#commandContext = options.commandContext;
   }
 
   async start(): Promise<void> {
@@ -43,10 +51,20 @@ export class CliSession {
       if (trimmed === "") {
         continue;
       }
-      if (trimmed === EXIT_COMMAND) {
+      if (this.#router !== undefined && this.#commandContext !== undefined) {
+        const routed = await this.#router.route(trimmed, this.#commandContext);
+        if (routed.kind === "exit") {
+          break;
+        }
+        if (routed.kind === "handled") {
+          continue;
+        }
+        await this.#runTurnSafe(routed.text);
+      } else if (trimmed === EXIT_COMMAND) {
         break;
+      } else {
+        await this.#runTurnSafe(trimmed);
       }
-      await this.#runTurnSafe(trimmed);
     }
     this.#prompt.close();
   }

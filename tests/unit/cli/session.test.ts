@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { RunResult } from "../../../src/agent/result.js";
 import type { Prompt } from "../../../src/cli/prompt.js";
 import type { Renderer } from "../../../src/cli/renderer.js";
+import { SlashCommandRouter } from "../../../src/cli/command-router.js";
 import { CliSession, type RunTurn } from "../../../src/cli/session.js";
 
 class FakePrompt implements Prompt {
@@ -228,5 +229,66 @@ describe("CliSession", () => {
 
     expect(renderer.errors).toEqual(["boom"]);
     expect(prompt.closed).toBe(true);
+  });
+});
+
+describe("CliSession with command router", () => {
+  test("a handled command does not call runTurn", async () => {
+    const prompt = new FakePrompt();
+    const renderer = new MemoryRenderer();
+    const router = new SlashCommandRouter();
+    router.register({
+      name: "status",
+      usage: "/status",
+      description: "show status",
+      execute: async () => ({ kind: "continue" as const, stateChanged: false }),
+    });
+    router.register({
+      name: "exit",
+      usage: "/exit",
+      description: "exit",
+      execute: async () => ({ kind: "exit" as const }),
+    });
+    const turns: string[] = [];
+    prompt.pushInput("/status");
+    prompt.pushInput("/exit");
+    const session = new CliSession({
+      prompt,
+      renderer,
+      runTurn: async (text) => {
+        turns.push(text);
+        return { status: "completed", steps: 1, toolCalls: 0, durationMs: 1 };
+      },
+      router,
+      commandContext: { renderer },
+    });
+
+    await session.start();
+
+    expect(turns).toEqual([]);
+    expect(prompt.closed).toBe(true);
+  });
+
+  test("an escaped command reaches runTurn with one leading slash", async () => {
+    const prompt = new FakePrompt();
+    const renderer = new MemoryRenderer();
+    const router = new SlashCommandRouter();
+    const turns: string[] = [];
+    prompt.pushInput("//help");
+    prompt.pushInput(null);
+    const session = new CliSession({
+      prompt,
+      renderer,
+      runTurn: async (text) => {
+        turns.push(text);
+        return { status: "completed", steps: 1, toolCalls: 0, durationMs: 1 };
+      },
+      router,
+      commandContext: { renderer },
+    });
+
+    await session.start();
+
+    expect(turns).toEqual(["/help"]);
   });
 });
