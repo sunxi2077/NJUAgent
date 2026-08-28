@@ -1,4 +1,5 @@
 import type { SessionManager } from "../sessions/session-manager.js";
+import type { SkillRegistry } from "../skills/skill-registry.js";
 import type { SessionStore } from "../sessions/session-store.js";
 import type { Renderer } from "./renderer.js";
 import type { TerminalTheme } from "./theme.js";
@@ -37,5 +38,6 @@ export type CommandContext = {
     | "deactivateSkill"
   >;
   store: Pick<SessionStore, "list">;
+  skillRegistry: Pick<SkillRegistry, "refresh" | "list" | "resolve" | "diagnostics">;
   signal: AbortSignal;
 };

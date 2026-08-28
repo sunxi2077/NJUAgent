@@ -23,6 +23,13 @@ function context(): CommandContext {
     renderer: new MemoryRenderer(),
     theme: createTheme({ enabled: false }),
     signal: new AbortController().signal,
+    skillRegistry: {
+      refresh: async () => ({ skills: [], diagnostics: [] }),
+      list: () => [],
+      resolve: () => undefined,
+      diagnostics: () => [],
+    },
+
     sessionManager: {
       active: () => {
         throw new Error("unused");

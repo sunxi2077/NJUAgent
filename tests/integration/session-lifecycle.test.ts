@@ -240,6 +240,13 @@ describe("session lifecycle", () => {
         sessionManager: manager,
         store,
         signal: new AbortController().signal,
+    skillRegistry: {
+      refresh: async () => ({ skills: [], diagnostics: [] }),
+      list: () => [],
+      resolve: () => undefined,
+      diagnostics: () => [],
+    },
+
       },
     });
     prompt.reads = ["/totally-unknown", "//help", null];

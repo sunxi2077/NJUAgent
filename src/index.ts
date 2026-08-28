@@ -211,6 +211,7 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     theme,
     sessionManager,
     store: sessionStore,
+    skillRegistry,
     signal: new AbortController().signal,
   };
   const session = new CliSession({

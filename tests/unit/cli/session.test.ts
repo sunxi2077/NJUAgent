@@ -278,11 +278,17 @@ describe("CliSession with command router", () => {
           resume: async () => { throw new Error("unused"); },
           contextStatus: () => { throw new Error("unused"); },
           compact: async () => { throw new Error("unused"); },
-      activeSkill: () => undefined,
-      activateSkill: async () => { throw new Error("unused"); },
-      deactivateSkill: async () => undefined,
+          activeSkill: () => undefined,
+          activateSkill: async () => { throw new Error("unused"); },
+          deactivateSkill: async () => undefined,
         },
         store: { list: async () => ({ sessions: [], diagnostics: [] }) },
+        skillRegistry: {
+          refresh: async () => ({ skills: [], diagnostics: [] }),
+          list: () => [],
+          resolve: () => undefined,
+          diagnostics: () => [],
+        },
       },
     });
 
@@ -324,6 +330,12 @@ describe("CliSession with command router", () => {
       deactivateSkill: async () => undefined,
         },
         store: { list: async () => ({ sessions: [], diagnostics: [] }) },
+        skillRegistry: {
+          refresh: async () => ({ skills: [], diagnostics: [] }),
+          list: () => [],
+          resolve: () => undefined,
+          diagnostics: () => [],
+        },
       },
     });
 

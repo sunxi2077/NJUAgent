@@ -103,3 +103,19 @@ export function formatContextStatus(
     `  summary     ${status.coveredMessageCount}/${status.totalMessageCount} messages · ${status.compactionCount} compactions`,
   ].join("\n");
 }
+
+export function formatSkillList(
+  skills: readonly {
+    name: string;
+    description: string;
+    source: string;
+  }[],
+  options: { activeName: string | null; theme: TerminalTheme },
+): string {
+  const { activeName, theme } = options;
+  const rows = skills.map((skill) => {
+    const marker = skill.name === activeName ? theme.brand("  (active)") : "";
+    return `${skill.name}  [${skill.source}]  ${truncateText(skill.description, 120)}${marker}`;
+  });
+  return `Skills (${skills.length}):\n${rows.join("\n")}`;
+}

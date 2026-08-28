@@ -70,6 +70,13 @@ function makeContext(overrides: Partial<FakeServices> = {}) {
     renderer,
     theme: createTheme({ enabled: false }),
     signal: new AbortController().signal,
+    skillRegistry: {
+      refresh: async () => ({ skills: [], diagnostics: [] }),
+      list: () => [],
+      resolve: () => undefined,
+      diagnostics: () => [],
+    },
+
     sessionManager: {
       active: () => structuredClone(activeSession),
       isDirty: () => services.dirty,
