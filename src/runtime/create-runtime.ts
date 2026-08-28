@@ -1,0 +1,129 @@
+import { ContextPolicy } from "../agent/context-policy.js";
+import { ConversationHistory } from "../agent/history.js";
+import { AgentRunner } from "../agent/runner.js";
+import { buildSystemPrompt } from "../agent/system-prompt.js";
+import { formatPermissionQuestion, type Prompt } from "../cli/prompt.js";
+import type { Renderer } from "../cli/renderer.js";
+import type { AppConfig } from "../config.js";
+import type { ModelProvider } from "../providers/provider.js";
+import { AnthropicProvider } from "../providers/anthropic-provider.js";
+import {
+  BalancedPermissionPolicy,
+  CautiousPermissionPolicy,
+} from "../security/permission-policy.js";
+import { Workspace } from "../security/workspace.js";
+import type { ActiveRuntime } from "../sessions/session-manager.js";
+import type { PersistedSessionV1 } from "../sessions/session-schema.js";
+import { createRunCommandTool } from "../tools/command-tool.js";
+import { ToolExecutor } from "../tools/executor.js";
+import {
+  createEditFileTool,
+  createReadFileTool,
+  createWriteFileTool,
+} from "../tools/file-tools.js";
+import { ToolRegistry } from "../tools/registry.js";
+import {
+  createListFilesTool,
+  createSearchTextTool,
+} from "../tools/search-tools.js";
+
+export type CreateRuntimeDeps = {
+  env: NodeJS.ProcessEnv;
+  config: AppConfig;
+  prompt: Pick<Prompt, "confirm">;
+  renderer: Renderer;
+  /** Test seam: inject a scripted provider instead of the real SDK client. */
+  provider?: ModelProvider;
+};
+
+/**
+ * Builds an `ActiveRuntime` for a session: canonical workspace, tools,
+ * executor, provider, and runner. Workspaces are re-opened and the runner is
+ * re-created on every resume so no closure retains a stale AgentRunner.
+ */
+export async function createRuntime(
+  session: PersistedSessionV1,
+  deps: CreateRuntimeDeps,
+): Promise<ActiveRuntime> {
+  const workspace = await Workspace.open(session.workspaceRoot);
+
+  const registry = new ToolRegistry();
+  registry.register(
+    createReadFileTool({
+      workspace,
+      maxOutputBytes: deps.config.toolOutputMaxBytes,
+    }),
+  );
+  registry.register(createWriteFileTool({ workspace }));
+  registry.register(createEditFileTool({ workspace }));
+  registry.register(
+    createListFilesTool({
+      workspace,
+      maxOutputBytes: deps.config.toolOutputMaxBytes,
+      maxResults: 200,
+    }),
+  );
+  registry.register(
+    createSearchTextTool({
+      workspace,
+      maxOutputBytes: deps.config.toolOutputMaxBytes,
+      maxResults: 200,
+      maxFileBytes: 1_000_000,
+    }),
+  );
+  registry.register(
+    createRunCommandTool({
+      workspace,
+      defaultTimeoutMs: deps.config.commandTimeoutMs,
+      maxOutputBytes: deps.config.toolOutputMaxBytes,
+      sourceEnvironment: deps.env,
+    }),
+  );
+
+  const permissionPolicy = session.permissionMode === "cautious"
+    ? new CautiousPermissionPolicy()
+    : new BalancedPermissionPolicy();
+  const executor = new ToolExecutor({
+    registry,
+    permissionPolicy,
+    confirm: (call, reason) =>
+      deps.prompt.confirm(formatPermissionQuestion(call, reason)),
+    onOutput: (call, stream, text) => deps.renderer.toolOutput(call, stream, text),
+  });
+
+  const provider = deps.provider ??
+    new AnthropicProvider({
+      model: session.modelId,
+      maxTokens: deps.config.maxTokens,
+      apiKey: deps.config.apiKey,
+      baseURL: deps.config.baseURL,
+    });
+
+  const history = ConversationHistory.from(session.messages);
+  const runner = new AgentRunner({
+    provider,
+    history,
+    tools: executor,
+    maxSteps: deps.config.maxSteps,
+    systemPrompt: buildSystemPrompt(),
+    contextPolicy: new ContextPolicy({
+      maxEstimatedTokens: 48_000,
+      compactAtRatio: 0.7,
+      recentMessages: 10,
+      charsPerToken: 4,
+    }),
+    retryPolicy: {
+      maxAttempts: 3,
+      baseDelayMs: 1_000,
+      maxDelayMs: 30_000,
+      jitterRatio: 0.25,
+    },
+    onEvent: (event) => deps.renderer.handle(event),
+  });
+
+  return {
+    session,
+    history,
+    run: (text, signal) => runner.run(text, signal),
+  };
+}

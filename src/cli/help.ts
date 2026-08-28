@@ -18,7 +18,15 @@ Environment:
   NO_COLOR                     disable colors and cursor control when set
 
 Interactive commands:
-  /exit                        Exit the session
+  /help                        Show available commands
+  /status                      Show current session status
+  /sessions                    List saved sessions
+  /resume <id>                 Resume a saved session
+  /new                         Start a new session
+  /history [1-100]             Show recent messages
+  /exit                        Save the current session and exit
+
+Any input starting with / is handled locally; use // to send literal text.
 `;
 
 export function isHelpRequest(argv: readonly string[]): boolean {

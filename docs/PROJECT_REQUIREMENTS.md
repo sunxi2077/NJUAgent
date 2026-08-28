@@ -296,4 +296,32 @@ CLI
 - 演练与备用录屏（阶段 D）：多次演练后准备异常情况备用素材。
 - 打包与表单提交（2.3/阶段 D）：最终 ZIP 仅含 `README.txt` 与视频，以本人姓名命名，截止前提交。
 - 语义上下文摘要（4.2 末项）：当前为确定性压缩（保留任务文本、工具结果配对与 ID），不保留早期内容的语义摘要；列为 P2 增强。
-- 阶段一收尾合并（`fix/stage-one-hardening` → `main`）：真实冒烟已 PASS，待执行快速前进合并与合并后全量验证；不压缩、不改写历史。
+- 阶段一收尾已合并：`fix/stage-one-hardening` 通过真实冒烟 PASS 后快速前进合并到 `main`，历史未压缩、未改写。
+
+## 11. 第二阶段（Stage Two）开发清单
+
+> 依据 `docs/superpowers/plans/2026-08-28-stage-two-*.md` 四份规划文档逐项核对；仅测试通过后勾选。
+
+### CLI 基础（stage-two-cli-foundation）
+
+- [x] 稳定错误契约（AppError 代码 + 安全消息格式化，不泄露密钥/环境）。
+- [x] 应用路径（`NJU_AGENT_HOME`）、原子 JSON 写入、非密钥配置存储（`config.json` 只存 Base URL/Model/权限模式）。
+- [x] 配置合并（环境 > 持久化；API Key 仅来自环境）与首次运行 setup 流程。
+- [x] NJU 紫主题与一次性欢迎面板（TTY box 版 / 非 TTY 纯文本，长值按码点截断）。
+- [x] readline 接管输入提示（`› ` 存活于输出重绘；suspend/resume 协调）。
+- [x] 可测试 bootstrap（help 免凭据、setup 时机、欢迎面板只出现一次）。
+
+### 会话与命令（stage-two-sessions-and-commands）
+
+- [x] 完整历史可加载（防御性拷贝、校验失败不部分替换）与 `PersistedSessionV1` 双重校验。
+- [x] 原子、抗损坏的 SessionStore（损坏文件隔离、唯一前缀解析）。
+- [x] SessionManager（save-before-switch、回合检查点、dirty 语义、resume/createNew 原子替换）。
+- [x] SlashCommandRouter（`//` 转义、未知命令不达模型）。
+- [x] 会话/历史纯格式化（有界预览，不泄露完整工具输出）。
+- [x] `/help` `/status` `/sessions` `/resume` `/new` `/history` `/exit` 命令处理器。
+- [x] 端到端接线（默认会话、动态 runtime 重建、欢迎页最近会话提示、生命周期集成测试）。
+
+### 待后续文档完成（尚未开始）
+
+- [ ] 上下文管理（stage-two-context-management）：预算/估算/压缩器/ContextManager、`/context` `/compact`。
+- [ ] Skills 与发布（stage-two-skills-and-release）：SKILL.md 解析/发现/激活、`/skills` `/skill`、发布门禁。

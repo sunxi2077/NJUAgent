@@ -6,7 +6,7 @@ export type WelcomeView = {
   model: string;
   sessionShortId: string;
   permissionMode: string;
-  recentSession?: string;
+  recentSession?: string | undefined;
 };
 
 const MIN_FORMATTED_WIDTH = 60;

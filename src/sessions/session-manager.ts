@@ -46,7 +46,7 @@ export class SessionManager {
     this.#store = options.store;
     this.#runtimeFactory = options.runtimeFactory;
     this.#clock = options.clock ?? (() => new Date());
-    this.#idFactory = options.idFactory ?? crypto.randomUUID;
+    this.#idFactory = options.idFactory ?? (() => crypto.randomUUID());
     this.#activeRuntime = options.initialRuntime;
   }
 

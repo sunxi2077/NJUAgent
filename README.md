@@ -69,6 +69,24 @@ Add input validation to parsePort in src/validate.mjs and make the tests pass.
 
 Non-TTY output (pipes, CI) degrades automatically to plain newline-safe records with no colors or cursor control; set `NO_COLOR` for the same behavior on a TTY.
 
+### Slash commands
+
+Input starting with `/` is handled locally and never reaches the model; use `//` to send literal text starting with a slash:
+
+```
+/help                        Show available commands
+/status                      Show current session status
+/sessions                    List saved sessions
+/resume <id>                 Resume a saved session (full UUID or unique prefix)
+/new                         Start a new session
+/history [1-100]             Show recent messages
+/exit                        Save the current session and exit
+```
+
+### Sessions
+
+Each session is stored as one versioned JSON file under `$NJU_AGENT_HOME/sessions` (default `~/.nju-agent/sessions`), containing the complete valid message history, context checkpoint state, and run statistics. The API Key is never persisted. A corrupt session file is reported as a warning without blocking the other sessions. There is currently **no cross-session text search**.
+
 ## Architecture
 
 ```

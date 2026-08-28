@@ -4,13 +4,8 @@ import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
 
-import { ContextPolicy } from "./agent/context-policy.js";
-import { ConversationHistory } from "./agent/history.js";
-import { AgentRunner } from "./agent/runner.js";
-import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { HELP_TEXT, isHelpRequest } from "./cli/help.js";
 import {
-  formatPermissionQuestion,
   ReadlinePrompt,
   type Prompt,
   type ReadlinePromptOptions,
@@ -18,31 +13,21 @@ import {
 import { TerminalRenderer, type Renderer, type TerminalRendererOptions } from "./cli/renderer.js";
 import { runSetup } from "./cli/setup.js";
 import { CliSession } from "./cli/session.js";
+import { SlashCommandRouter } from "./cli/command-router.js";
+import { registerCoreCommands } from "./cli/commands/register-core-commands.js";
+import type { CommandContext } from "./cli/command.js";
 import { createTheme } from "./cli/theme.js";
 import { formatWelcome } from "./cli/welcome.js";
 import { ConfigError, resolveConfig, type AppConfig } from "./config.js";
 import { AppError, isAppError } from "./errors/app-error.js";
 import { formatError } from "./errors/error-presenter.js";
-import { AnthropicProvider } from "./providers/anthropic-provider.js";
-import {
-  BalancedPermissionPolicy,
-  CautiousPermissionPolicy,
-} from "./security/permission-policy.js";
-import { Workspace } from "./security/workspace.js";
-import { ConfigStore, type PersistedConfigV1 } from "./storage/config-store.js";
+import { createRuntime } from "./runtime/create-runtime.js";
+import { SessionManager } from "./sessions/session-manager.js";
+import { SessionStore } from "./sessions/session-store.js";
+import { createEmptySession } from "./sessions/session-schema.js";
+import { ConfigStore } from "./storage/config-store.js";
 import { resolveAppPaths } from "./storage/paths.js";
-import { createRunCommandTool } from "./tools/command-tool.js";
-import { ToolExecutor } from "./tools/executor.js";
-import {
-  createEditFileTool,
-  createReadFileTool,
-  createWriteFileTool,
-} from "./tools/file-tools.js";
-import { ToolRegistry } from "./tools/registry.js";
-import {
-  createListFilesTool,
-  createSearchTextTool,
-} from "./tools/search-tools.js";
+import type { PersistedConfigV1 } from "./storage/config-store.js";
 
 const APP_VERSION = "0.2.0";
 
@@ -74,22 +59,6 @@ function toInternalError(error: unknown): AppError {
     userMessage: error instanceof Error ? error.message : String(error),
     cause: error,
   });
-}
-
-async function openWorkspace(
-  root: string,
-  stderr: NodeJS.WritableStream,
-): Promise<Workspace | undefined> {
-  try {
-    return await Workspace.open(root);
-  } catch (error) {
-    stderr.write(
-      `nju-agent: cannot open workspace "${root}": ` +
-        (error instanceof Error ? error.message : String(error)) +
-        "\n",
-    );
-    return undefined;
-  }
 }
 
 export async function main(deps: BootstrapDeps): Promise<number> {
@@ -162,44 +131,18 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     throw error;
   }
 
-  // 5. Workspace, tools, executor, provider, runner.
-  const workspace = await openWorkspace(config.workspaceRoot, stderr);
-  if (workspace === undefined) {
-    return 1;
-  }
-
-  const registry = new ToolRegistry();
-  registry.register(
-    createReadFileTool({
-      workspace,
-      maxOutputBytes: config.toolOutputMaxBytes,
-    }),
-  );
-  registry.register(createWriteFileTool({ workspace }));
-  registry.register(createEditFileTool({ workspace }));
-  registry.register(
-    createListFilesTool({
-      workspace,
-      maxOutputBytes: config.toolOutputMaxBytes,
-      maxResults: 200,
-    }),
-  );
-  registry.register(
-    createSearchTextTool({
-      workspace,
-      maxOutputBytes: config.toolOutputMaxBytes,
-      maxResults: 200,
-      maxFileBytes: 1_000_000,
-    }),
-  );
-  registry.register(
-    createRunCommandTool({
-      workspace,
-      defaultTimeoutMs: config.commandTimeoutMs,
-      maxOutputBytes: config.toolOutputMaxBytes,
-      sourceEnvironment: env,
-    }),
-  );
+  // 5. Session store, default session, and the active runtime.
+  const sessionStore = new SessionStore(paths.sessionsDirectory);
+  const { sessions: existingSessions } = await sessionStore.list();
+  const sessionId = randomUUID();
+  const initialSession = createEmptySession({
+    id: sessionId,
+    now: new Date().toISOString(),
+    workspaceRoot: config.workspaceRoot,
+    modelId: config.model,
+    permissionMode: config.permissionMode,
+  });
+  await sessionStore.save(initialSession);
 
   const renderer = rendererFactory({
     stdout,
@@ -207,56 +150,38 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     maxLiveOutputBytes: config.uiOutputMaxBytes,
     inputSurface: prompt,
   });
-  const permissionPolicy = config.permissionMode === "cautious"
-    ? new CautiousPermissionPolicy()
-    : new BalancedPermissionPolicy();
-  const executor = new ToolExecutor({
-    registry,
-    permissionPolicy,
-    confirm: (call, reason) =>
-      prompt.confirm(formatPermissionQuestion(call, reason)),
-    onOutput: (call, stream, text) => renderer.toolOutput(call, stream, text),
+  const runtimeDeps = { env, config, prompt, renderer };
+  let initialRuntime;
+  try {
+    initialRuntime = await createRuntime(initialSession, runtimeDeps);
+  } catch (error) {
+    stderr.write(
+      `nju-agent: cannot open workspace "${config.workspaceRoot}": ` +
+        (error instanceof Error ? error.message : String(error)) +
+        "\n",
+    );
+    return 1;
+  }
+  const sessionManager = new SessionManager({
+    initialRuntime,
+    store: sessionStore,
+    runtimeFactory: (target) => createRuntime(target, runtimeDeps),
   });
 
-  const provider = new AnthropicProvider({
-    model: config.model,
-    maxTokens: config.maxTokens,
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-  });
-  const history = new ConversationHistory();
-  const runner = new AgentRunner({
-    provider,
-    history,
-    tools: executor,
-    maxSteps: config.maxSteps,
-    systemPrompt: buildSystemPrompt(),
-    contextPolicy: new ContextPolicy({
-      maxEstimatedTokens: 48_000,
-      compactAtRatio: 0.7,
-      recentMessages: 10,
-      charsPerToken: 4,
-    }),
-    retryPolicy: {
-      maxAttempts: 3,
-      baseDelayMs: 1_000,
-      maxDelayMs: 30_000,
-      jitterRatio: 0.25,
-    },
-    onEvent: (event) => renderer.handle(event),
-  });
-
-  // 6. One-time welcome panel.
-  const sessionId = randomUUID();
+  // 6. One-time welcome panel with an optional recent-session hint.
   const theme = createTheme({ enabled: isTTY && !envNoColor(env) });
+  const recent = existingSessions[0];
   stdout.write(
     `${formatWelcome(
       {
         version: APP_VERSION,
-        workspace: workspace.root,
+        workspace: config.workspaceRoot,
         model: config.model,
         sessionShortId: sessionId.slice(0, 8),
         permissionMode: config.permissionMode,
+        recentSession: recent === undefined
+          ? undefined
+          : `${recent.id.slice(0, 8)} (${recent.title})`,
       },
       theme,
     )}\n`,
@@ -265,17 +190,27 @@ export async function main(deps: BootstrapDeps): Promise<number> {
   if (config.debug) {
     stderr.write(
       `[debug] session=${sessionId} model=${config.model} base_url=${config.baseURL} ` +
-        `workspace=${workspace.root} max_steps=${config.maxSteps} ` +
+        `workspace=${config.workspaceRoot} max_steps=${config.maxSteps} ` +
         `command_timeout_ms=${config.commandTimeoutMs} ` +
         `tool_output_max_bytes=${config.toolOutputMaxBytes}\n`,
     );
   }
 
-  // 7. Session loop.
+  // 7. Commands and the session loop.
+  const router = new SlashCommandRouter();
+  registerCoreCommands(router);
+  const commandContext: CommandContext = {
+    renderer,
+    theme,
+    sessionManager,
+    store: sessionStore,
+  };
   const session = new CliSession({
     prompt,
     renderer,
-    runTurn: (text, signal) => runner.run(text, signal),
+    runTurn: (text, signal) => sessionManager.runTurn(text, signal),
+    router,
+    commandContext,
   });
   await session.start();
   return 0;
