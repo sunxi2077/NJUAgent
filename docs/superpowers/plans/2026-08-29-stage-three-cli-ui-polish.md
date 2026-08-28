@@ -72,7 +72,7 @@ The only new production files are `src/cli/terminal-text.ts` and `src/cli/stream
 - Removes production use of old `theme.brand()` and `theme.brandBase()` names.
 - `TerminalRendererOptions.theme` remains injectable; `src/index.ts` passes the same instance to welcome, renderer, command context, and input-prompt formatting.
 
-- [ ] **Step 1: Replace the theme tests with semantic-contract tests**
+- [x] **Step 1: Replace the theme tests with semantic-contract tests**
 
 Add assertions equivalent to:
 
@@ -122,7 +122,7 @@ test("enables enhanced terminal output in exactly the supported environment", ()
 
 Keep the existing test that every enabled wrapper contains the original text and closes its own ANSI sequence. Extend it to the new method list.
 
-- [ ] **Step 2: Run the focused theme test and observe RED**
+- [x] **Step 2: Run the focused theme test and observe RED**
 
 Run:
 
@@ -132,7 +132,7 @@ npm test -- tests/unit/cli/theme.test.ts
 
 Expected: FAIL because `shouldEnableTerminalTheme` and the semantic method names do not exist, and the current border still uses color `54`.
 
-- [ ] **Step 3: Implement the semantic theme**
+- [x] **Step 3: Implement the semantic theme**
 
 Use this public shape in `src/cli/theme.ts`:
 
@@ -189,7 +189,7 @@ underline     => semantic.underline
 
 For a disabled theme, every method must be the same `identity` function.
 
-- [ ] **Step 4: Migrate old brand callers and centralize composition**
+- [x] **Step 4: Migrate old brand callers and centralize composition**
 
 In `src/cli/renderer.ts`, replace old generic brand calls according to intent:
 
@@ -234,7 +234,7 @@ Remove the later duplicate `createTheme()` call. Keep screen clearing stricter t
 
 Replace the current clear-screen `interactive` calculation with `themeEnabled && env.CI === undefined`, and remove the now-unused `envNoColor()` helper from `src/index.ts`.
 
-- [ ] **Step 5: Add TERM=dumb and shared-theme regression tests**
+- [x] **Step 5: Add TERM=dumb and shared-theme regression tests**
 
 In `tests/integration/bootstrap.test.ts`, add:
 
@@ -258,7 +258,7 @@ test("TERM=dumb disables clear and all ANSI output", async () => {
 
 Update renderer/session-format unit fixtures to call semantic method names. Do not loosen existing non-TTY assertions.
 
-- [ ] **Step 6: Run focused tests until GREEN**
+- [x] **Step 6: Run focused tests until GREEN**
 
 Run:
 
@@ -269,7 +269,7 @@ npm run typecheck
 
 Expected: all listed tests pass; typecheck exits 0; `rg '\.brand(Base)?\(' src` returns no matches.
 
-- [ ] **Step 7: Commit Task 1**
+- [x] **Step 7: Commit Task 1**
 
 ```bash
 git add src/cli/theme.ts src/cli/renderer.ts src/sessions/session-format.ts src/index.ts tests/unit/cli/theme.test.ts tests/unit/cli/renderer.test.ts tests/unit/sessions/session-format.test.ts tests/integration/bootstrap.test.ts
@@ -293,7 +293,7 @@ git commit -m "refactor: add semantic terminal theme"
 - Preserves: `formatWelcome(view: WelcomeView, theme: TerminalTheme, options?: WelcomeOptions): string`
 - Full layout at `columns >= 64`; compact bordered layout at `36 <= columns < 64`; plain layout below 36 or when theme is disabled.
 
-- [ ] **Step 1: Write failing terminal-width tests**
+- [x] **Step 1: Write failing terminal-width tests**
 
 Create `tests/unit/cli/terminal-text.test.ts`:
 
@@ -318,7 +318,7 @@ describe("terminal text width", () => {
 });
 ```
 
-- [ ] **Step 2: Run the new test and observe RED**
+- [x] **Step 2: Run the new test and observe RED**
 
 Run:
 
@@ -328,7 +328,7 @@ npm test -- tests/unit/cli/terminal-text.test.ts
 
 Expected: FAIL because `src/cli/terminal-text.ts` does not exist.
 
-- [ ] **Step 3: Implement the focused terminal-width utility**
+- [x] **Step 3: Implement the focused terminal-width utility**
 
 Use `stripVTControlCharacters` from `node:util`. Iterate code points, ignore combining marks, and count common East Asian/emoji ranges as two cells. Keep the implementation local and deterministic:
 
@@ -373,7 +373,7 @@ export function terminalWidth(text: string): number {
 
 Implement `truncateToTerminalWidth()` by reserving one cell for `…`, iterating complete code points, and stopping before the next character would exceed `maxWidth - 1`. Return the original string unchanged when it already fits. Inputs to this function are unstyled values; do not attempt to preserve arbitrary ANSI while slicing.
 
-- [ ] **Step 4: Write failing responsive welcome tests**
+- [x] **Step 4: Write failing responsive welcome tests**
 
 Replace old exact 80/88-column assumptions with the approved three layouts:
 
@@ -408,7 +408,7 @@ test("an extremely narrow terminal falls back to unboxed text", () => {
 
 Also keep tests for plain output, long workspace/model values, and the actionable `/resume` hint.
 
-- [ ] **Step 5: Run welcome tests and observe RED**
+- [x] **Step 5: Run welcome tests and observe RED**
 
 Run:
 
@@ -418,7 +418,7 @@ npm test -- tests/unit/cli/terminal-text.test.ts tests/unit/cli/welcome.test.ts
 
 Expected: width utility tests pass after Step 3; welcome tests fail because the old formatter has no Logo, uses the dark border, and forces a box at 30 columns.
 
-- [ ] **Step 6: Implement full, compact, and plain formatters**
+- [x] **Step 6: Implement full, compact, and plain formatters**
 
 Define constants in `welcome.ts`:
 
@@ -450,7 +450,7 @@ For the full layout, include one blank row above and below Logo, a title row, th
 
 The recent-session and `/help` hints remain outside the box and must themselves be truncated when the terminal is narrow.
 
-- [ ] **Step 7: Run focused tests until GREEN**
+- [x] **Step 7: Run focused tests until GREEN**
 
 Run:
 
@@ -461,7 +461,7 @@ npm run typecheck
 
 Expected: all pass; no output line exceeds its requested width after ANSI stripping.
 
-- [ ] **Step 8: Commit Task 2**
+- [x] **Step 8: Commit Task 2**
 
 ```bash
 git add src/cli/terminal-text.ts src/cli/welcome.ts tests/unit/cli/terminal-text.test.ts tests/unit/cli/welcome.test.ts
@@ -486,7 +486,7 @@ git commit -m "feat: add responsive NJU welcome card"
 - Production bootstrap injects `${theme.userLabel("❯ You")}  `.
 - `ReadlinePrompt.read(promptText)` remains unchanged and owns `setPrompt()`/`prompt(true)`.
 
-- [ ] **Step 1: Record prompt text in the session fake and write a failing test**
+- [x] **Step 1: Record prompt text in the session fake and write a failing test**
 
 In `tests/unit/cli/session.test.ts`, change `FakePrompt.read()` to append its argument:
 
@@ -523,7 +523,7 @@ test("uses the injected input prompt for every read", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the session test and observe RED**
+- [x] **Step 2: Run the session test and observe RED**
 
 Run:
 
@@ -533,7 +533,7 @@ npm test -- tests/unit/cli/session.test.ts
 
 Expected: FAIL because `CliSessionOptions` has no `inputPrompt` and the loop still uses the constant `› `.
 
-- [ ] **Step 3: Implement input-prompt injection**
+- [x] **Step 3: Implement input-prompt injection**
 
 Use:
 
@@ -571,7 +571,7 @@ inputPrompt: `${theme.userLabel("❯ You")}  `,
 
 Because a disabled theme is identity, plain mode receives `❯ You  ` without ANSI. The bootstrap test should inspect prompt arguments rather than expect readline echo in `MemoryWriter`.
 
-- [ ] **Step 4: Add ANSI readline ownership and bootstrap tests**
+- [x] **Step 4: Add ANSI readline ownership and bootstrap tests**
 
 In `tests/unit/cli/prompt.test.ts`, add a case proving the prompt forwards an ANSI-decorated string unchanged to `setPrompt()` and still redraws through `prompt(true)`.
 
@@ -583,7 +583,7 @@ expect(prompt.promptTexts[0]).toBe("❯ You  "); // non-TTY disabled theme
 
 Add a TTY case that strips ANSI and expects `❯ You  ` while also asserting the raw prompt contains `\x1b[`.
 
-- [ ] **Step 5: Run focused tests until GREEN**
+- [x] **Step 5: Run focused tests until GREEN**
 
 Run:
 
@@ -594,7 +594,7 @@ npm run typecheck
 
 Expected: all pass; existing paste queue and suspend/resume tests remain green.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```bash
 git add src/cli/session.ts src/index.ts tests/unit/cli/session.test.ts tests/unit/cli/prompt.test.ts tests/integration/bootstrap.test.ts
@@ -616,7 +616,7 @@ git commit -m "feat: add distinct user prompt anchor"
 - Produces methods `push(text: string): MarkdownRenderResult`, `flush(): MarkdownRenderResult`, and `reset(): void`.
 - Task 4 supports plain streaming, bold, italic, inline code, links, newlines, chunk fragmentation, and bounded buffering. Task 5 extends the same class with block syntax.
 
-- [ ] **Step 1: Create tests for plain streaming and inline syntax**
+- [x] **Step 1: Create tests for plain streaming and inline syntax**
 
 Create helpers:
 
@@ -676,7 +676,7 @@ test("flush closes state and the next segment starts clean", () => {
 
 Fix the `test.each` tuple typing if TypeScript inference requires an explicit `const cases: string[][]`; do not weaken the assertions.
 
-- [ ] **Step 2: Run the new test and observe RED**
+- [x] **Step 2: Run the new test and observe RED**
 
 Run:
 
@@ -686,7 +686,7 @@ npm test -- tests/unit/cli/streaming-markdown.test.ts
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement the public result and bounded state**
+- [x] **Step 3: Implement the public result and bounded state**
 
 Start with:
 
@@ -744,7 +744,7 @@ The parser must never leave ANSI open across calls. Instead, style each emitted 
 
 This makes every output chunk independently reset-safe while the logical Markdown mode can span provider chunks.
 
-- [ ] **Step 4: Implement deterministic inline draining**
+- [x] **Step 4: Implement deterministic inline draining**
 
 `#drain(flush: boolean)` must repeatedly consume `#pending`:
 
@@ -841,7 +841,7 @@ When Task 5 adds line-prefix parsing, this scanner becomes the inline stage call
 
 Do not attempt nested inline styles. The approved subset requires stable common model output, not full CommonMark precedence.
 
-- [ ] **Step 5: Add partition-invariance and Unicode tests**
+- [x] **Step 5: Add partition-invariance and Unicode tests**
 
 Add:
 
@@ -860,7 +860,7 @@ test("reports whether the rendered cursor is inside a line", () => {
 });
 ```
 
-- [ ] **Step 6: Run focused tests until GREEN**
+- [x] **Step 6: Run focused tests until GREEN**
 
 Run:
 
@@ -871,7 +871,7 @@ npm run typecheck
 
 Expected: all inline cases pass, ordinary text is emitted during `push()`, and the incomplete-link buffer never grows beyond the stated cap before releasing text.
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```bash
 git add src/cli/streaming-markdown.ts tests/unit/cli/streaming-markdown.test.ts
@@ -893,7 +893,7 @@ git commit -m "feat: add streaming inline markdown renderer"
 - Adds block recognition for headings, unordered/ordered lists, quotes, and fenced code.
 - Buffers only an undecided line prefix or fence line, never an ordinary paragraph or the complete answer.
 
-- [ ] **Step 1: Add failing block-level tests**
+- [x] **Step 1: Add failing block-level tests**
 
 Add cases whose expected visible output is exact:
 
@@ -961,7 +961,7 @@ test.each([1, 2, 3, 4, 5, 6])("renders heading level %i without raw hashes", (le
 });
 ```
 
-- [ ] **Step 2: Run block tests and observe RED**
+- [x] **Step 2: Run block tests and observe RED**
 
 Run:
 
@@ -971,7 +971,7 @@ npm test -- tests/unit/cli/streaming-markdown.test.ts
 
 Expected: inline tests remain green; new block tests fail because prefixes and fences are currently emitted literally.
 
-- [ ] **Step 3: Add explicit block state**
+- [x] **Step 3: Add explicit block state**
 
 Extend the class with:
 
@@ -988,7 +988,7 @@ type BlockMode = "normal" | "code";
 
 `reset()` must restore every field. `flush()` must release an undecided `#linePrefix`, close a code block logically, clear heading state, and return a reset-safe result.
 
-- [ ] **Step 4: Implement bounded line-prefix classification**
+- [x] **Step 4: Implement bounded line-prefix classification**
 
 Before inline parsing, collect only a possible prefix at line start. Decide according to these exact rules:
 
@@ -1007,7 +1007,7 @@ Limit a numeric-list candidate to 9 digits. A heading with no separating space i
 
 For level 1 and 2 headings, count the visible heading cells while emitting the styled title. When its newline arrives, output that newline followed by `theme.muted("─".repeat(Math.min(24, Math.max(1, headingWidth))))` and another newline. Levels 3–6 output only the styled title and original newline.
 
-- [ ] **Step 5: Implement fenced-code state**
+- [x] **Step 5: Implement fenced-code state**
 
 In code mode:
 
@@ -1021,7 +1021,7 @@ In code mode:
 
 Do not show the optional language label and do not perform syntax highlighting.
 
-- [ ] **Step 6: Add adversarial chunk tests**
+- [x] **Step 6: Add adversarial chunk tests**
 
 Cover every decision point with exact visible output:
 
@@ -1037,7 +1037,7 @@ test.each([
 });
 ```
 
-- [ ] **Step 7: Run focused tests until GREEN**
+- [x] **Step 7: Run focused tests until GREEN**
 
 Run:
 
@@ -1048,7 +1048,7 @@ npm run typecheck
 
 Expected: all inline and block cases pass; ordinary paragraphs still emit during `push()` and do not wait for newline or completion.
 
-- [ ] **Step 8: Commit Task 5**
+- [x] **Step 8: Commit Task 5**
 
 ```bash
 git add src/cli/streaming-markdown.ts tests/unit/cli/streaming-markdown.test.ts
@@ -1069,7 +1069,7 @@ git commit -m "feat: render streaming markdown blocks"
 - Produces one permanent `◆ NJUAgent` label for each model step that emits at least one non-empty text delta.
 - Preserves all existing non-TTY `[model]`, `[tool]`, `[usage]`, `[run]`, live-output limiting, and concise tool-summary contracts.
 
-- [ ] **Step 1: Write failing assistant-segment tests**
+- [x] **Step 1: Write failing assistant-segment tests**
 
 Add a local ANSI stripper using `stripVTControlCharacters`, then add:
 
@@ -1114,7 +1114,7 @@ test("tool-separated text steps receive separate assistant anchors", () => {
 
 Add a non-TTY case confirming raw `**bold**` remains in `[model]` output.
 
-- [ ] **Step 2: Run renderer tests and observe RED**
+- [x] **Step 2: Run renderer tests and observe RED**
 
 Run:
 
@@ -1124,7 +1124,7 @@ npm test -- tests/unit/cli/renderer.test.ts
 
 Expected: FAIL because there is no assistant label and TTY Markdown is written raw.
 
-- [ ] **Step 3: Add renderer state and lazy segment start**
+- [x] **Step 3: Add renderer state and lazy segment start**
 
 Add fields:
 
@@ -1152,7 +1152,7 @@ On an empty `text_delta`, do nothing. On the first non-empty interactive delta:
 
 Do not use `#permanent()` for streaming Markdown content because that method appends a newline. It is acceptable to use a focused helper that suspends/resumes the input surface, clears transient status, and writes bytes without forcing a newline.
 
-- [ ] **Step 4: Replace raw stream flushing with Markdown-aware flushing**
+- [x] **Step 4: Replace raw stream flushing with Markdown-aware flushing**
 
 Replace `#flushStreamingText()` with a helper whose behavior is:
 
@@ -1173,13 +1173,13 @@ Interactive `usage` is also an output boundary because Provider usage can arrive
 
 Avoid recursive flushing: `#permanent()` must not call a helper that calls `#permanent()` again. Keep model flushing and general permanent-line writing as separate primitives.
 
-- [ ] **Step 5: Preserve plain mode and tool/status behavior**
+- [x] **Step 5: Preserve plain mode and tool/status behavior**
 
 Leave `#writePlainModelDelta()` and `#flushPlainModelText()` intact. Keep concise tool cards and live-output limiting unchanged. Migrate any remaining visual brand references to semantic theme methods.
 
 Add one blank line after the interactive run summary so the next readline prompt is visually separated. Implement it in the summary output, not by adding whitespace to the prompt string. Do not add blank lines to non-TTY records.
 
-- [ ] **Step 6: Add boundary and reset tests**
+- [x] **Step 6: Add boundary and reset tests**
 
 Add tests for:
 
@@ -1238,7 +1238,7 @@ test("a response already ending in newline does not gain duplicate model newline
 
 If ANSI wrapper nesting makes the first test's index comparison brittle, replace it with a test theme whose `bold`, `code`, and `success` wrappers emit deterministic textual markers; do not delete the style-leak assertion.
 
-- [ ] **Step 7: Run focused tests until GREEN**
+- [x] **Step 7: Run focused tests until GREEN**
 
 Run:
 
@@ -1249,7 +1249,7 @@ npm run typecheck
 
 Expected: all pass; `◆ NJUAgent` appears once per text-producing step, common Markdown delimiters are absent from interactive visible output, and plain mode is unchanged.
 
-- [ ] **Step 8: Commit Task 6**
+- [x] **Step 8: Commit Task 6**
 
 ```bash
 git add src/cli/renderer.ts tests/unit/cli/renderer.test.ts
@@ -1269,7 +1269,7 @@ git commit -m "feat: distinguish assistant transcript segments"
 - Verifies the complete spec; introduces no new product behavior.
 - Produces a concise evidence report for the reviewer, including automated results and manual TTY observations.
 
-- [ ] **Step 1: Run the complete automated verification from a fresh command**
+- [x] **Step 1: Run the complete automated verification from a fresh command**
 
 Run in this order:
 
@@ -1284,7 +1284,7 @@ Expected: typecheck exits 0; all Vitest files and tests pass with zero failures;
 
 If a command fails, record the exact failing file/assertion, make only the smallest in-scope correction using a failing focused test, rerun that focused test, then rerun all four commands from the beginning.
 
-- [ ] **Step 2: Verify scope mechanically**
+- [x] **Step 2: Verify scope mechanically**
 
 Run:
 
@@ -1302,7 +1302,7 @@ Expected:
 - the final search finds no newly introduced UI framework or Slash-menu implementation;
 - no generated `dist/` files are staged.
 
-- [ ] **Step 3: Run plain-output acceptance without credentials or model calls**
+- [x] **Step 3: Run plain-output acceptance without credentials or model calls**
 
 Use existing automated bootstrap seams where possible. At minimum verify:
 
@@ -1313,7 +1313,7 @@ TERM=dumb node dist/index.js --help
 
 Expected: help output is readable and contains no ESC bytes. Do not print environment secrets while checking this.
 
-- [ ] **Step 4: Run the real TTY visual acceptance**
+- [x] **Step 4: Run the real TTY visual acceptance**
 
 With the user's existing environment configuration, run:
 
@@ -1336,7 +1336,7 @@ Check every item and record PASS/FAIL:
 
 If live API access is unavailable, mark only API-dependent items SKIP with the reason. Welcome, prompt, resize, `/help`, `/status`, `/history`, `/context`, and `/exit` still require a real TTY check.
 
-- [ ] **Step 5: Review the final diff against the spec section by section**
+- [x] **Step 5: Review the final diff against the spec section by section**
 
 Use this checklist:
 
@@ -1354,7 +1354,7 @@ Full suite/build                  -> Step 1 evidence
 
 Do not declare completion if any non-skipped row lacks evidence.
 
-- [ ] **Step 6: Commit any final scoped correction, otherwise leave the verified commits unchanged**
+- [x] **Step 6: Commit any final scoped correction, otherwise leave the verified commits unchanged**
 
 Only when Step 1–5 exposed and you fixed a real issue:
 
@@ -1366,7 +1366,7 @@ git commit -m "fix: close CLI UI acceptance gaps"
 
 If no correction was necessary, do not create an empty commit.
 
-- [ ] **Step 7: Deliver the implementation report**
+- [x] **Step 7: Deliver the implementation report**
 
 Report:
 
