@@ -12,6 +12,10 @@ export type AppConfig = {
   commandTimeoutMs: number;
   toolOutputMaxBytes: number;
   uiOutputMaxBytes: number;
+  contextWindowTokens: number;
+  contextCompactRatio: number;
+  contextRecentMessages: number;
+  contextSafetyTokens: number;
   workspaceRoot: string;
   permissionMode: PermissionMode;
   debug: boolean;
@@ -33,6 +37,10 @@ const NUMERIC_DEFAULTS = {
   TOOL_OUTPUT_MAX_BYTES: 32_768,
   UI_OUTPUT_MAX_BYTES: 65_536,
   AGENT_MAX_TOKENS: 4_096,
+  CONTEXT_WINDOW_TOKENS: 48_000,
+  CONTEXT_COMPACT_RATIO: 0.70,
+  CONTEXT_RECENT_MESSAGES: 12,
+  CONTEXT_SAFETY_TOKENS: 2_048,
 } as const;
 
 function readPositiveInt(
@@ -48,6 +56,42 @@ function readPositiveInt(
   if (!Number.isInteger(value) || value <= 0) {
     throw new ConfigError(
       `Environment variable ${name} must be a positive integer; got "${raw}"`,
+    );
+  }
+  return value;
+}
+
+function readNonNegativeInt(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+): number {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new ConfigError(
+      `Environment variable ${name} must be a non-negative integer; got "${raw}"`,
+    );
+  }
+  return value;
+}
+
+function readRatio(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+): number {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0 || value > 1) {
+    throw new ConfigError(
+      `Environment variable ${name} must be a ratio in (0, 1]; got "${raw}"`,
     );
   }
   return value;
@@ -141,11 +185,29 @@ export function resolveConfig(input: ResolveConfigInput): AppConfig {
     );
   }
 
+  const maxTokens = readPositiveInt(input.env, "AGENT_MAX_TOKENS", NUMERIC_DEFAULTS.AGENT_MAX_TOKENS);
+  const contextWindowTokens = readPositiveInt(
+    input.env,
+    "CONTEXT_WINDOW_TOKENS",
+    NUMERIC_DEFAULTS.CONTEXT_WINDOW_TOKENS,
+  );
+  const contextSafetyTokens = readPositiveInt(
+    input.env,
+    "CONTEXT_SAFETY_TOKENS",
+    NUMERIC_DEFAULTS.CONTEXT_SAFETY_TOKENS,
+  );
+  const hardInputBudget = contextWindowTokens - maxTokens - contextSafetyTokens;
+  if (hardInputBudget <= 0) {
+    throw new ConfigError(
+      "The hard input budget (CONTEXT_WINDOW_TOKENS - AGENT_MAX_TOKENS - CONTEXT_SAFETY_TOKENS) must be positive.",
+    );
+  }
+
   return {
     apiKey,
     baseURL,
     model,
-    maxTokens: readPositiveInt(input.env, "AGENT_MAX_TOKENS", NUMERIC_DEFAULTS.AGENT_MAX_TOKENS),
+    maxTokens,
     maxSteps: readPositiveInt(input.env, "AGENT_MAX_STEPS", NUMERIC_DEFAULTS.AGENT_MAX_STEPS),
     commandTimeoutMs: readPositiveInt(
       input.env,
@@ -162,6 +224,18 @@ export function resolveConfig(input: ResolveConfigInput): AppConfig {
       "UI_OUTPUT_MAX_BYTES",
       NUMERIC_DEFAULTS.UI_OUTPUT_MAX_BYTES,
     ),
+    contextWindowTokens,
+    contextCompactRatio: readRatio(
+      input.env,
+      "CONTEXT_COMPACT_RATIO",
+      NUMERIC_DEFAULTS.CONTEXT_COMPACT_RATIO,
+    ),
+    contextRecentMessages: readNonNegativeInt(
+      input.env,
+      "CONTEXT_RECENT_MESSAGES",
+      NUMERIC_DEFAULTS.CONTEXT_RECENT_MESSAGES,
+    ),
+    contextSafetyTokens,
     workspaceRoot: args.workspaceRoot ?? input.cwd,
     permissionMode:
       args.permissionMode ?? input.persisted?.permissionMode ?? "balanced",

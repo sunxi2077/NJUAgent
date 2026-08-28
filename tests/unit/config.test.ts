@@ -186,3 +186,58 @@ describe("resolveConfig", () => {
     expect(config.permissionMode).toBe("balanced");
   });
 });
+
+describe("context budgets", () => {
+  test("applies documented context budget defaults", () => {
+    const config = loadConfig(validEnv, []);
+    expect(config).toMatchObject({
+      contextWindowTokens: 48_000,
+      contextCompactRatio: 0.70,
+      contextRecentMessages: 12,
+      contextSafetyTokens: 2_048,
+    });
+  });
+
+  test("accepts positive overrides from the environment", () => {
+    const config = loadConfig(
+      {
+        ...validEnv,
+        CONTEXT_WINDOW_TOKENS: "60000",
+        CONTEXT_COMPACT_RATIO: "0.5",
+        CONTEXT_RECENT_MESSAGES: "6",
+        CONTEXT_SAFETY_TOKENS: "4096",
+      },
+      [],
+    );
+    expect(config.contextWindowTokens).toBe(60000);
+    expect(config.contextCompactRatio).toBe(0.5);
+    expect(config.contextRecentMessages).toBe(6);
+    expect(config.contextSafetyTokens).toBe(4096);
+  });
+
+  test.each(["0", "1.01", "abc"])(
+    "rejects an invalid compact ratio: %s",
+    (value) => {
+      expect(() =>
+        loadConfig({ ...validEnv, CONTEXT_COMPACT_RATIO: value }, []),
+      ).toThrow(ConfigError);
+    },
+  );
+
+  test("rejects a zero or negative recent-message count", () => {
+    for (const bad of ["-1"]) {
+      expect(() =>
+        loadConfig({ ...validEnv, CONTEXT_RECENT_MESSAGES: bad }, []),
+      ).toThrow(ConfigError);
+    }
+  });
+
+  test("requires the hard input budget window - maxTokens - safety to be positive", () => {
+    expect(() =>
+      loadConfig(
+        { ...validEnv, CONTEXT_WINDOW_TOKENS: "3000", AGENT_MAX_TOKENS: "2000", CONTEXT_SAFETY_TOKENS: "2048" },
+        [],
+      ),
+    ).toThrow(/hard input budget/iu);
+  });
+});
