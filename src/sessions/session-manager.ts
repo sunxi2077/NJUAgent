@@ -4,6 +4,7 @@ import { ConversationHistory } from "../agent/history.js";
 import type { Skill } from "../skills/skill.js";
 import type { SkillRegistry } from "../skills/skill-registry.js";
 import { AppError } from "../errors/app-error.js";
+import type { PermissionMode } from "../config.js";
 import type { SessionStore } from "./session-store.js";
 import {
   createEmptySession,
@@ -76,11 +77,7 @@ export class SessionManager {
       session.title = deriveSessionTitle(text);
     }
     const result = await this.#activeRuntime.run(text, signal);
-    try {
-      await this.#checkpoint(result);
-    } catch {
-      // The run itself completed; a failed checkpoint only marks dirty.
-    }
+    await this.#checkpoint(result);
     return result;
   }
 
@@ -152,7 +149,6 @@ export class SessionManager {
       this.#activeRuntime.session.activeSkill = null;
       this.#activeRuntime.setActiveSkill(undefined);
       this.#dirty = true;
-      void this.flush();
     } else {
       this.#activeRuntime.setActiveSkill(skill);
     }
@@ -175,7 +171,29 @@ export class SessionManager {
     await this.flush();
     const runtime = await this.#runtimeFactory(session);
     await this.#replace(runtime);
+    this.#restoreActiveSkill();
     return session;
+  }
+
+  async reconfigure(options: {
+    modelId: string;
+    permissionMode: PermissionMode;
+  }): Promise<PersistedSessionV1> {
+    await this.flush();
+    const session = this.active();
+    session.modelId = options.modelId;
+    session.permissionMode = options.permissionMode;
+    session.updatedAt = this.#now();
+    const runtime = await this.#runtimeFactory(session);
+    try {
+      await this.#store.save(session);
+    } catch (error) {
+      await runtime.dispose?.();
+      throw error;
+    }
+    await this.#replace(runtime);
+    this.#restoreActiveSkill();
+    return this.active();
   }
 
   async #checkpoint(result: RunResult): Promise<void> {

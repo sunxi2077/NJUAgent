@@ -105,6 +105,21 @@ describe("ContextManager.prepare", () => {
     expect(prepared.compactedToolResults).toBe(1);
     expect(compactor.calls).toHaveLength(0);
   });
+
+  test("uses the last Provider input usage as a conservative compaction trigger", async () => {
+    const { manager, compactor } = makeManager({
+      policy: makePolicy({ recentMessages: 1 }),
+      initialState: { compactionCount: 0, lastInputTokens: 750 },
+    });
+
+    const prepared = await manager.prepare(
+      base([textUser("older request"), textAssistant("recent answer")]),
+    );
+
+    expect(compactor.calls).toHaveLength(1);
+    expect(prepared.action).toBe("compacted");
+    expect(manager.state().lastInputTokens).toBeUndefined();
+  });
 });
 
 describe("ContextManager.compactNow", () => {
@@ -187,5 +202,32 @@ describe("ContextManager.state", () => {
     const state = manager.state();
     state.compactionCount = 99;
     expect(manager.state().compactionCount).toBe(0);
+  });
+
+  test("status estimates the checkpoint summary plus uncovered tail, not the full transcript", () => {
+    const { manager } = makeManager({
+      initialState: {
+        compactionCount: 1,
+        checkpoint: {
+          summary: "short summary",
+          coveredMessageCount: 2,
+          createdAt: "2026-08-28T08:00:00.000Z",
+          sourceEstimatedTokens: 900,
+        },
+      },
+    });
+    const status = manager.status({
+      baseSystemPrompt: "base",
+      messages: [
+        textUser("x".repeat(2_000)),
+        textAssistant("y".repeat(2_000)),
+        textUser("small tail"),
+      ],
+      tools: [],
+    });
+
+    expect(status.coveredMessageCount).toBe(2);
+    expect(status.totalMessageCount).toBe(3);
+    expect(status.estimatedTokens).toBeLessThan(500);
   });
 });

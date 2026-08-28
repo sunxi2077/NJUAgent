@@ -138,11 +138,20 @@ describe("CliSession", () => {
     prompt.pushInput("   ");
     prompt.pushInput("task");
     prompt.pushInput(null);
-    const session = new CliSession({ prompt, renderer, runTurn });
+    let flushCalls = 0;
+    const session = new CliSession({
+      prompt,
+      renderer,
+      runTurn,
+      flushBeforeExit: async () => {
+        flushCalls += 1;
+      },
+    });
 
     await session.start();
 
     expect(turns).toEqual(["task"]);
+    expect(flushCalls).toBe(1);
     expect(prompt.closed).toBe(true);
   });
 
@@ -180,7 +189,15 @@ describe("CliSession", () => {
     const prompt = new FakePrompt();
     const renderer = new MemoryRenderer();
     const runTurn: RunTurn = async () => cancelledResult();
-    const session = new CliSession({ prompt, renderer, runTurn });
+    let flushCalls = 0;
+    const session = new CliSession({
+      prompt,
+      renderer,
+      runTurn,
+      flushBeforeExit: async () => {
+        flushCalls += 1;
+      },
+    });
     const started = session.start();
 
     await waitFor(() => prompt.readCount === 1);
@@ -188,6 +205,7 @@ describe("CliSession", () => {
     prompt.pressCtrlC();
     await started;
 
+    expect(flushCalls).toBe(1);
     expect(prompt.closed).toBe(true);
   });
 

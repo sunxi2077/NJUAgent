@@ -50,11 +50,15 @@ export class ContextManager {
   }
 
   status(input: Omit<ContextPrepareInput, "signal">): ContextStatus {
+    const covered = this.#state.checkpoint?.coveredMessageCount ?? 0;
     const systemPrompt = this.#systemPromptWithSummary(input.baseSystemPrompt);
     const estimatedTokens = this.#policy.estimate({
       systemPrompt,
-      messages: input.messages,
+      messages: input.messages.slice(covered),
       tools: input.tools,
+      ...(this.#state.lastInputTokens === undefined
+        ? {}
+        : { lastInputTokens: this.#state.lastInputTokens }),
     });
     return {
       estimatedTokens,
@@ -78,6 +82,9 @@ export class ContextManager {
       systemPrompt,
       messages: viewMessages,
       tools: input.tools,
+      ...(this.#state.lastInputTokens === undefined
+        ? {}
+        : { lastInputTokens: this.#state.lastInputTokens }),
     });
     if (estimate < this.#policy.thresholdTokens()) {
       return {
@@ -93,6 +100,9 @@ export class ContextManager {
       systemPrompt,
       messages: viewMessages,
       tools: input.tools,
+      ...(this.#state.lastInputTokens === undefined
+        ? {}
+        : { lastInputTokens: this.#state.lastInputTokens }),
     });
     if (deterministic.estimatedTokens < this.#policy.thresholdTokens()) {
       return {
@@ -110,11 +120,15 @@ export class ContextManager {
   async compactNow(
     input: ContextPrepareInput & { focus?: string },
   ): Promise<PreparedContext> {
+    const covered = this.#state.checkpoint?.coveredMessageCount ?? 0;
     const systemPrompt = this.#systemPromptWithSummary(input.baseSystemPrompt);
     const estimate = this.#policy.estimate({
       systemPrompt,
-      messages: input.messages,
+      messages: input.messages.slice(covered),
       tools: input.tools,
+      ...(this.#state.lastInputTokens === undefined
+        ? {}
+        : { lastInputTokens: this.#state.lastInputTokens }),
     });
     return this.#semanticCompact(input, systemPrompt, estimate, undefined, input.focus);
   }
@@ -161,7 +175,7 @@ export class ContextManager {
         return {
           action: "continue",
           systemPrompt,
-          messages: deterministic?.messages ?? input.messages,
+          messages: deterministic?.messages ?? input.messages.slice(oldCovered),
           estimatedTokens: estimate,
           compactedToolResults: deterministic?.compactedToolResults ?? 0,
           reason: `Automatic compaction failed (${error instanceof Error ? error.message : String(error)}); continuing with the current view.`,
@@ -170,7 +184,7 @@ export class ContextManager {
       return {
         action: "stop",
         systemPrompt,
-        messages: deterministic?.messages ?? input.messages,
+        messages: deterministic?.messages ?? input.messages.slice(oldCovered),
         estimatedTokens: estimate,
         compactedToolResults: deterministic?.compactedToolResults ?? 0,
         reason: `Automatic compaction failed and the request exceeds the hard input budget.`,
@@ -215,6 +229,7 @@ export class ContextManager {
 
     this.#state.checkpoint = candidate;
     this.#state.compactionCount += 1;
+    delete this.#state.lastInputTokens;
 
     if (candidateEstimate > this.#policy.hardInputTokens()) {
       return {

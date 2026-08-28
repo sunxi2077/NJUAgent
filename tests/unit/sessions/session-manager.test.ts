@@ -4,6 +4,7 @@ import { ConversationHistory } from "../../../src/agent/history.js";
 import type { RunResult } from "../../../src/agent/result.js";
 import { AppError } from "../../../src/errors/app-error.js";
 import { SkillRegistry } from "../../../src/skills/skill-registry.js";
+import type { Skill } from "../../../src/skills/skill.js";
 import { SessionManager, type ActiveRuntime } from "../../../src/sessions/session-manager.js";
 import {
   createEmptySession,
@@ -84,6 +85,7 @@ class FakeRuntime implements ActiveRuntime {
   readonly history: ConversationHistory;
   disposed = false;
   runCalls = 0;
+  activeSkill: Skill | undefined;
   nextResult: RunResult = { status: "completed", steps: 1, toolCalls: 0, durationMs: 1 };
 
   constructor(session: PersistedSessionV1) {
@@ -123,7 +125,9 @@ class FakeRuntime implements ActiveRuntime {
     };
   }
 
-  setActiveSkill(): void {}
+  setActiveSkill(skill: Skill | undefined): void {
+    this.activeSkill = skill;
+  }
 
   async dispose(): Promise<void> {
     this.disposed = true;
@@ -158,6 +162,24 @@ function setup(overrides: { store?: FakeStore; factory?: (s: PersistedSessionV1)
 }
 
 describe("SessionManager", () => {
+  test("repairs a missing persisted Skill on the next explicit flush", async () => {
+    const store = new FakeStore();
+    const runtime = new FakeRuntime(baseSession({ activeSkill: "missing" }));
+    const registry = { resolve: () => undefined } as unknown as SkillRegistry;
+    const manager = new SessionManager({
+      initialRuntime: runtime,
+      store,
+      runtimeFactory: async (session) => new FakeRuntime(session),
+      registry,
+    });
+
+    expect(manager.isDirty()).toBe(true);
+    expect(store.saveCalls).toBe(0);
+    await manager.flush();
+    expect(manager.active().activeSkill).toBeNull();
+    expect(store.saveCalls).toBe(1);
+  });
+
   test("first user text changes New session to a deterministic title", async () => {
     const { manager, store } = setup();
     await manager.runTurn("fix   the   parser", new AbortController().signal);
@@ -183,7 +205,9 @@ describe("SessionManager", () => {
   test("a save failure leaves the runtime active and dirty", async () => {
     const { manager, store, initialRuntime } = setup();
     store.failNextSave = true;
-    await manager.runTurn("task", new AbortController().signal);
+    await expect(
+      manager.runTurn("task", new AbortController().signal),
+    ).rejects.toMatchObject({ code: "SESSION_IO" });
 
     expect(manager.isDirty()).toBe(true);
     expect(manager.active().id).toBe(ID);
@@ -193,7 +217,9 @@ describe("SessionManager", () => {
   test("flush clears dirty only after a successful save", async () => {
     const { manager, store } = setup();
     store.failEverySave = true;
-    await manager.runTurn("task", new AbortController().signal);
+    await expect(
+      manager.runTurn("task", new AbortController().signal),
+    ).rejects.toMatchObject({ code: "SESSION_IO" });
     expect(manager.isDirty()).toBe(true);
 
     store.failEverySave = false;
@@ -204,7 +230,9 @@ describe("SessionManager", () => {
   test("createNew refuses to switch when flush fails", async () => {
     const { manager, store, initialRuntime, factoryCalls } = setup();
     store.failEverySave = true;
-    await manager.runTurn("task", new AbortController().signal);
+    await expect(
+      manager.runTurn("task", new AbortController().signal),
+    ).rejects.toMatchObject({ code: "SESSION_IO" });
 
     await expect(manager.createNew()).rejects.toMatchObject({ code: "SESSION_IO" });
     expect(manager.active().id).toBe(ID);
@@ -239,6 +267,56 @@ describe("SessionManager", () => {
     expect(resumed.id).toBe(target.id);
     expect(manager.active().id).toBe(target.id);
     expect(manager.active().title).toBe("resumed session");
+  });
+
+  test("resume restores the target session Skill on the replacement runtime", async () => {
+    const skill: Skill = {
+      name: "fmt",
+      description: "format code",
+      instructions: "Use the project formatter.",
+      source: "project",
+      filePath: "/tmp/workspace/.nju-agent/skills/fmt/SKILL.md",
+    };
+    const store = new FakeStore();
+    const initialRuntime = new FakeRuntime(baseSession());
+    let replacement: FakeRuntime | undefined;
+    const registry = {
+      resolve: (name: string) => name === "fmt" ? skill : undefined,
+    } as unknown as SkillRegistry;
+    const manager = new SessionManager({
+      initialRuntime,
+      store,
+      runtimeFactory: async (session) => {
+        replacement = new FakeRuntime(session);
+        return replacement;
+      },
+      registry,
+    });
+    const target = baseSession({
+      id: "aaaaaaaa-1111-4111-8111-111111111111",
+      activeSkill: "fmt",
+    });
+    store.files.set(target.id, target);
+
+    await manager.resume("aaaaaaaa");
+
+    expect(replacement?.activeSkill).toEqual(skill);
+  });
+
+  test("reconfigure rebuilds the active runtime while preserving history", async () => {
+    const { manager, initialRuntime, factoryCalls } = setup();
+    await manager.runTurn("keep this task", new AbortController().signal);
+
+    const updated = await manager.reconfigure({
+      modelId: "deepseek-next",
+      permissionMode: "cautious",
+    });
+
+    expect(initialRuntime.disposed).toBe(true);
+    expect(updated.modelId).toBe("deepseek-next");
+    expect(updated.permissionMode).toBe("cautious");
+    expect(updated.messages).toHaveLength(1);
+    expect(factoryCalls.at(-1)?.messages).toHaveLength(1);
   });
 
   test("failed target runtime creation leaves the original active", async () => {
