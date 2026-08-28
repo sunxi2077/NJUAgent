@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type { SlashCommand } from "../../../src/cli/command.js";
+import type { CommandResult, SlashCommand } from "../../../src/cli/command.js";
 import type { Renderer } from "../../../src/cli/renderer.js";
 import { SlashCommandRouter } from "../../../src/cli/command-router.js";
 
@@ -15,7 +15,7 @@ class MemoryRenderer implements Renderer {
 
 function fakeCommand(
   name: string,
-  execute = async () => ({ kind: "continue" as const, stateChanged: false }),
+  execute: () => Promise<CommandResult> = async () => ({ kind: "continue" as const, stateChanged: false }),
 ): SlashCommand {
   return {
     name,

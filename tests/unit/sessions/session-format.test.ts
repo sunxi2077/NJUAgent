@@ -71,7 +71,7 @@ describe("formatSessionStatus", () => {
     expect(text).toContain("balanced");
     expect(text).toContain("none");
     expect(text).toContain("Messages: 2");
-    expect(text).toContain("dirty: yes");
+    expect(text).toContain("Dirty: yes");
     expect(text).not.toContain("\x1b[");
   });
 });
