@@ -1,4 +1,4 @@
-import pc from "picocolors";
+import { createTheme, type TerminalTheme } from "./theme.js";
 
 import type { AgentEvent } from "../agent/events.js";
 import type { RunResult } from "../agent/result.js";
@@ -26,6 +26,8 @@ export type TerminalRendererOptions = {
   noColor?: boolean;
   /** Per-tool-call live terminal output budget in bytes. */
   maxLiveOutputBytes?: number;
+  /** Terminal styles; defaults to the interactive decision. */
+  theme?: TerminalTheme;
 };
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -42,6 +44,7 @@ export class TerminalRenderer implements Renderer {
   readonly #interactive: boolean;
   readonly #liveOutputLimiter: LiveOutputLimiter;
   readonly #liveOutputLimit: number;
+  readonly #theme: TerminalTheme;
   #transient = "";
   /** Whether streamed model text is on screen without a trailing newline. */
   #streamingText = false;
@@ -54,6 +57,7 @@ export class TerminalRenderer implements Renderer {
     this.#interactive = options.isTTY && !(options.noColor ?? envNoColor());
     this.#liveOutputLimit = options.maxLiveOutputBytes ?? DEFAULT_MAX_LIVE_OUTPUT_BYTES;
     this.#liveOutputLimiter = new LiveOutputLimiter(this.#liveOutputLimit);
+    this.#theme = options.theme ?? createTheme({ enabled: this.#interactive });
   }
 
   handle(event: AgentEvent): void {
@@ -90,7 +94,7 @@ export class TerminalRenderer implements Renderer {
         this.#flushStreamingText();
         this.#flushPlainModelText();
         if (this.#interactive) {
-          this.#status(`${pc.green("✓")} model completed (${event.stopReason})`);
+          this.#status(`${this.#theme.success("✓")} model completed (${event.stopReason})`);
         } else {
           this.#write(`[model] completed (stop: ${event.stopReason})\n`);
         }
@@ -98,7 +102,7 @@ export class TerminalRenderer implements Renderer {
       case "retrying":
         if (this.#interactive) {
           this.#permanent(
-            pc.yellow(`↻ retry attempt ${event.attempt} in ${event.delayMs}ms: ${event.reason}`),
+            this.#theme.warning(`↻ retry attempt ${event.attempt} in ${event.delayMs}ms: ${event.reason}`),
           );
         } else {
           this.#write(`[retry] attempt ${event.attempt} in ${event.delayMs}ms: ${event.reason}\n`);
@@ -108,7 +112,7 @@ export class TerminalRenderer implements Renderer {
         this.#flushStreamingText();
         if (this.#interactive) {
           this.#permanent(
-            `${pc.cyan(`⚙ ${event.name}`)} ${pc.dim(event.summary)} (${event.id})`,
+            `${this.#theme.brand(`⚙ ${event.name}`)} ${this.#theme.muted(event.summary)} (${event.id})`,
           );
           this.#status(`${event.name}…`);
         } else {
@@ -118,8 +122,8 @@ export class TerminalRenderer implements Renderer {
       case "tool_completed":
         this.#liveOutputLimiter.finish(event.id);
         if (this.#interactive) {
-          const mark = event.ok ? pc.green("✓") : pc.red("✗");
-          const name = event.ok ? event.name : pc.red(event.name);
+          const mark = event.ok ? this.#theme.success("✓") : this.#theme.error("✗");
+          const name = event.ok ? event.name : this.#theme.error(event.name);
           this.#permanent(`  ${mark} ${name} ${event.durationMs}ms`);
           this.#status("");
         } else {
@@ -149,7 +153,7 @@ export class TerminalRenderer implements Renderer {
     if (limited.suppressionStarted) {
       const message = `[output] live output suppressed after ${this.#liveOutputLimit} bytes`;
       if (this.#interactive) {
-        this.#permanent(pc.dim(message));
+        this.#permanent(this.#theme.muted(message));
       } else {
         this.#write(`${message}\n`);
       }
@@ -160,7 +164,7 @@ export class TerminalRenderer implements Renderer {
     if (this.#interactive) {
       for (const line of limited.text.split("\n")) {
         if (line !== "") {
-          this.#permanent(stream === "stderr" ? pc.red(line) : line);
+          this.#permanent(stream === "stderr" ? this.#theme.error(line) : line);
         }
       }
       return;
@@ -170,7 +174,7 @@ export class TerminalRenderer implements Renderer {
 
   error(message: string): void {
     if (this.#interactive) {
-      this.#permanent(pc.red(`✖ ${message}`));
+      this.#permanent(this.#theme.error(`✖ ${message}`));
       this.#status("");
     } else {
       this.#write(`[error] ${message}\n`);
@@ -183,7 +187,7 @@ export class TerminalRenderer implements Renderer {
       const status = this.#statusColor(result.status)(result.status);
       this.#permanent(`${status} ${stats}`);
       if ("message" in result && result.message !== "") {
-        this.#permanent(`  ${pc.red(result.message)}`);
+        this.#permanent(`  ${this.#theme.error(result.message)}`);
       }
       this.#status("");
       return;
@@ -197,15 +201,15 @@ export class TerminalRenderer implements Renderer {
   #statusColor(status: RunResult["status"]): (text: string) => string {
     switch (status) {
       case "completed":
-        return pc.green;
+        return this.#theme.success;
       case "limit_reached":
       case "context_limit":
-        return pc.yellow;
+        return this.#theme.warning;
       case "cancelled":
-        return pc.cyan;
+        return this.#theme.brand;
       case "model_failed":
       case "internal_failed":
-        return pc.red;
+        return this.#theme.error;
     }
   }
 
@@ -233,7 +237,7 @@ export class TerminalRenderer implements Renderer {
   #spinner(): string {
     const frame = SPINNER_FRAMES[this.#spinnerIndex % SPINNER_FRAMES.length] ?? "|";
     this.#spinnerIndex += 1;
-    return pc.cyan(frame);
+    return this.#theme.brand(frame);
   }
 
   #permanent(text: string): void {
