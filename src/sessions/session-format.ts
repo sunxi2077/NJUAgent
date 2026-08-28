@@ -80,3 +80,26 @@ export function formatHistory(
   }
   return tail.map((message) => previewMessage(message, theme)).join("\n");
 }
+
+export function formatContextStatus(
+  status: {
+    estimatedTokens: number;
+    thresholdTokens: number;
+    hardInputTokens: number;
+    contextWindowTokens: number;
+    coveredMessageCount: number;
+    totalMessageCount: number;
+    compactionCount: number;
+  },
+  theme: TerminalTheme,
+): string {
+  const number = (value: number) => value.toLocaleString("en-US");
+  return [
+    theme.brand("Context (estimated)"),
+    `  input       ${number(status.estimatedTokens)} tokens`,
+    `  compact at  ${number(status.thresholdTokens)}`,
+    `  hard limit  ${number(status.hardInputTokens)}`,
+    `  window      ${number(status.contextWindowTokens)}`,
+    `  summary     ${status.coveredMessageCount}/${status.totalMessageCount} messages · ${status.compactionCount} compactions`,
+  ].join("\n");
+}

@@ -149,5 +149,13 @@ export async function createRuntime(
         messages: history.snapshot(),
         tools: executor.definitions(),
       }),
+    compact: (focus, signal) =>
+      contextManager.compactNow({
+        baseSystemPrompt: buildSystemPrompt(),
+        messages: history.snapshot(),
+        tools: executor.definitions(),
+        signal,
+        ...(focus === undefined ? {} : { focus }),
+      }),
   };
 }

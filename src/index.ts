@@ -204,6 +204,7 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     theme,
     sessionManager,
     store: sessionStore,
+    signal: new AbortController().signal,
   };
   const session = new CliSession({
     prompt,

@@ -52,7 +52,17 @@ export class CliSession {
         continue;
       }
       if (this.#router !== undefined && this.#commandContext !== undefined) {
-        const routed = await this.#router.route(trimmed, this.#commandContext);
+        const controller = new AbortController();
+        this.#current = controller;
+        let routed;
+        try {
+          routed = await this.#router.route(trimmed, {
+            ...this.#commandContext,
+            signal: controller.signal,
+          });
+        } finally {
+          this.#current = undefined;
+        }
         if (routed.kind === "exit") {
           break;
         }

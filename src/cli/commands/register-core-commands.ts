@@ -1,4 +1,6 @@
 import type { SlashCommandRouter } from "../command-router.js";
+import { createCompactCommand } from "./compact-command.js";
+import { createContextCommand } from "./context-command.js";
 import { createExitCommand } from "./exit-command.js";
 import { createHelpCommand } from "./help-command.js";
 import { createHistoryCommand } from "./history-command.js";
@@ -19,5 +21,7 @@ export function registerCoreCommands(router: SlashCommandRouter): void {
   router.register(createResumeCommand());
   router.register(createNewCommand());
   router.register(createHistoryCommand());
+  router.register(createContextCommand());
+  router.register(createCompactCommand());
   router.register(createExitCommand());
 }

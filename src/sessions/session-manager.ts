@@ -1,5 +1,5 @@
 import type { RunResult } from "../agent/result.js";
-import type { ContextState, ContextStatus } from "../agent/context-types.js";
+import type { ContextState, ContextStatus, PreparedContext } from "../agent/context-types.js";
 import { ConversationHistory } from "../agent/history.js";
 import type { SessionStore } from "./session-store.js";
 import {
@@ -14,6 +14,7 @@ export type ActiveRuntime = {
   run(text: string, signal: AbortSignal): Promise<RunResult>;
   contextState(): ContextState;
   contextStatus(): ContextStatus;
+  compact(focus: string | undefined, signal: AbortSignal): Promise<PreparedContext>;
   dispose?(): Promise<void> | void;
 };
 
@@ -96,6 +97,21 @@ export class SessionManager {
     await this.#store.save(session);
     await this.#replace(runtime);
     return session;
+  }
+
+  contextStatus(): ContextStatus {
+    return this.#activeRuntime.contextStatus();
+  }
+
+  /** Runs manual compaction and persists the updated context on success. */
+  async compact(focus: string | undefined, signal: AbortSignal): Promise<PreparedContext> {
+    const prepared = await this.#activeRuntime.compact(focus, signal);
+    const session = this.#activeRuntime.session;
+    session.context = this.#activeRuntime.contextState();
+    session.updatedAt = this.#now();
+    this.#dirty = true;
+    await this.flush();
+    return prepared;
   }
 
   async resume(prefix: string): Promise<PersistedSessionV1> {

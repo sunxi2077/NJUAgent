@@ -69,6 +69,7 @@ function makeContext(overrides: Partial<FakeServices> = {}) {
   const context: CommandContext = {
     renderer,
     theme: createTheme({ enabled: false }),
+    signal: new AbortController().signal,
     sessionManager: {
       active: () => structuredClone(activeSession),
       isDirty: () => services.dirty,
@@ -90,6 +91,16 @@ function makeContext(overrides: Partial<FakeServices> = {}) {
         }
         return { ...activeSession, id: "aaaaaaaa-1111-4111-8111-111111111111", title: "resumed" };
       },
+      contextStatus: () => ({
+        estimatedTokens: 18240,
+        thresholdTokens: 33600,
+        hardInputTokens: 41952,
+        contextWindowTokens: 48000,
+        coveredMessageCount: 24,
+        totalMessageCount: 38,
+        compactionCount: 2,
+      }),
+      compact: async () => ({ action: "compacted", systemPrompt: "", messages: [], estimatedTokens: 0, compactedToolResults: 0 }),
     },
     store: {
       list: async () => ({
