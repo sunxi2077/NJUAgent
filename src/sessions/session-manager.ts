@@ -1,4 +1,5 @@
 import type { RunResult } from "../agent/result.js";
+import type { ContextState, ContextStatus } from "../agent/context-types.js";
 import { ConversationHistory } from "../agent/history.js";
 import type { SessionStore } from "./session-store.js";
 import {
@@ -11,6 +12,8 @@ export type ActiveRuntime = {
   session: PersistedSessionV1;
   history: ConversationHistory;
   run(text: string, signal: AbortSignal): Promise<RunResult>;
+  contextState(): ContextState;
+  contextStatus(): ContextStatus;
   dispose?(): Promise<void> | void;
 };
 
@@ -107,6 +110,7 @@ export class SessionManager {
   async #checkpoint(result: RunResult): Promise<void> {
     const session = this.#activeRuntime.session;
     session.messages = this.#activeRuntime.history.snapshot();
+    session.context = this.#activeRuntime.contextState();
     session.updatedAt = this.#now();
     session.stats.turns += 1;
     session.stats.toolCalls += result.toolCalls;

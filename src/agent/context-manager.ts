@@ -2,27 +2,21 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import type { CompactorPort } from "./compactor.js";
 import {
   type ContextCheckpoint,
+  type ContextPrepareInput,
   type ContextState,
   type ContextStatus,
   type PreparedContext,
 } from "./context-types.js";
 import { ContextPolicy, type DeterministicContextView } from "./context-policy.js";
 import { AppError } from "../errors/app-error.js";
-import type { Message } from "./messages.js";
-import type { ModelToolDefinition } from "../providers/provider.js";
 
-export type ContextPrepareInput = {
-  baseSystemPrompt: string;
-  messages: readonly Message[];
-  tools: readonly ModelToolDefinition[];
-  signal: AbortSignal;
-};
 
 export type ContextManagerOptions = {
   policy: ContextPolicy;
   compactor: CompactorPort;
   initialState?: ContextState;
   clock?: () => Date;
+  onEvent?: (event: { type: "context_compaction_started" } | { type: "context_compaction_completed"; summaryLength: number } | { type: "context_warning"; message: string }) => void;
 };
 
 const NOTHING_TO_COMPACT = "Nothing to compact yet.";
@@ -36,12 +30,14 @@ export class ContextManager {
   readonly #policy: ContextPolicy;
   readonly #compactor: CompactorPort;
   readonly #clock: () => Date;
+  readonly #onEvent: ContextManagerOptions["onEvent"];
   #state: ContextState;
 
   constructor(options: ContextManagerOptions) {
     this.#policy = options.policy;
     this.#compactor = options.compactor;
     this.#clock = options.clock ?? (() => new Date());
+    this.#onEvent = options.onEvent;
     this.#state = options.initialState ?? { compactionCount: 0 };
   }
 
@@ -142,6 +138,7 @@ export class ContextManager {
     }
 
     let summary: string;
+    this.#onEvent?.({ type: "context_compaction_started" });
     try {
       summary = await this.#compactor.compact({
         ...(this.#state.checkpoint === undefined
@@ -153,6 +150,10 @@ export class ContextManager {
       });
     } catch (error) {
       // Rollback: nothing was committed; continue below the hard limit or stop.
+      this.#onEvent?.({
+        type: "context_warning",
+        message: error instanceof Error ? error.message : String(error),
+      });
       if (estimate < this.#policy.hardInputTokens()) {
         return {
           action: "continue",
@@ -174,11 +175,16 @@ export class ContextManager {
     }
 
     if (summary.trim() === "") {
+      this.#onEvent?.({
+        type: "context_warning",
+        message: "The summarizer returned an empty summary.",
+      });
       throw new AppError({
         code: "COMPACTION_FAILED",
         userMessage: "The summarizer returned an empty summary.",
       });
     }
+    this.#onEvent?.({ type: "context_compaction_completed", summaryLength: [...summary].length });
     if (cut <= oldCovered) {
       throw new AppError({
         code: "COMPACTION_FAILED",

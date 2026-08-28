@@ -1,4 +1,5 @@
 import type { Message } from "./messages.js";
+import type { ModelToolDefinition } from "../providers/provider.js";
 
 /**
  * Shared context checkpoint/state subset persisted in Session V1 and extended
@@ -46,4 +47,11 @@ export type ContextStatus = {
   totalMessageCount: number;
   compactionCount: number;
   lastInputTokens?: number;
+};
+
+export type ContextPrepareInput = {
+  baseSystemPrompt: string;
+  messages: readonly Message[];
+  tools: readonly ModelToolDefinition[];
+  signal: AbortSignal;
 };

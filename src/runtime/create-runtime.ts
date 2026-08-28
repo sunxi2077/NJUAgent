@@ -1,7 +1,11 @@
+import { ContextManager } from "../agent/context-manager.js";
 import { ContextPolicy } from "../agent/context-policy.js";
+import { ModelCompactor } from "../agent/compactor.js";
 import { ConversationHistory } from "../agent/history.js";
 import { AgentRunner } from "../agent/runner.js";
 import { buildSystemPrompt } from "../agent/system-prompt.js";
+import type { AgentEvent } from "../agent/events.js";
+import type { ContextStatus } from "../agent/context-types.js";
 import { formatPermissionQuestion, type Prompt } from "../cli/prompt.js";
 import type { Renderer } from "../cli/renderer.js";
 import type { AppConfig } from "../config.js";
@@ -100,13 +104,8 @@ export async function createRuntime(
     });
 
   const history = ConversationHistory.from(session.messages);
-  const runner = new AgentRunner({
-    provider,
-    history,
-    tools: executor,
-    maxSteps: deps.config.maxSteps,
-    systemPrompt: buildSystemPrompt(),
-    contextPolicy: new ContextPolicy({
+  const contextManager = new ContextManager({
+    policy: new ContextPolicy({
       contextWindowTokens: deps.config.contextWindowTokens,
       maxOutputTokens: deps.config.maxTokens,
       safetyTokens: deps.config.contextSafetyTokens,
@@ -114,6 +113,22 @@ export async function createRuntime(
       recentMessages: deps.config.contextRecentMessages,
       charsPerToken: 4,
     }),
+    compactor: new ModelCompactor(provider),
+    ...(session.context.checkpoint === undefined &&
+    session.context.lastInputTokens === undefined &&
+    session.context.compactionCount === 0
+      ? {}
+      : { initialState: session.context }),
+    onEvent: (event) =>
+      deps.renderer.handle(event as unknown as AgentEvent),
+  });
+  const runner = new AgentRunner({
+    provider,
+    history,
+    tools: executor,
+    maxSteps: deps.config.maxSteps,
+    systemPrompt: buildSystemPrompt(),
+    contextManager,
     retryPolicy: {
       maxAttempts: 3,
       baseDelayMs: 1_000,
@@ -127,5 +142,12 @@ export async function createRuntime(
     session,
     history,
     run: (text, signal) => runner.run(text, signal),
+    contextState: () => contextManager.state(),
+    contextStatus: (): ContextStatus =>
+      contextManager.status({
+        baseSystemPrompt: buildSystemPrompt(),
+        messages: history.snapshot(),
+        tools: executor.definitions(),
+      }),
   };
 }

@@ -96,6 +96,22 @@ class FakeRuntime implements ActiveRuntime {
     return this.nextResult;
   }
 
+  contextState() {
+    return { compactionCount: 0 };
+  }
+
+  contextStatus() {
+    return {
+      estimatedTokens: 0,
+      thresholdTokens: 0,
+      hardInputTokens: 0,
+      contextWindowTokens: 0,
+      coveredMessageCount: 0,
+      totalMessageCount: 0,
+      compactionCount: 0,
+    };
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
   }

@@ -1,5 +1,5 @@
 import type { AgentEventHandler } from "./events.js";
-import type { ContextPolicyPort } from "./context-policy.js";
+import type { ContextPrepareInput, PreparedContext } from "./context-types.js";
 import { ConversationHistory } from "./history.js";
 import type { ToolCallBlock, ToolResultBlock } from "./messages.js";
 import type { RunResult } from "./result.js";
@@ -20,13 +20,18 @@ export interface ToolExecutorPort {
   ): Promise<ToolPortResult>;
 }
 
+export interface ContextManagerPort {
+  prepare(input: ContextPrepareInput): Promise<PreparedContext>;
+  recordUsage(inputTokens: number): void;
+}
+
 export type AgentRunnerOptions = {
   provider: ModelProvider;
   history: ConversationHistory;
   tools: ToolExecutorPort;
   maxSteps: number;
   systemPrompt: string;
-  contextPolicy?: ContextPolicyPort;
+  contextManager?: ContextManagerPort;
   retryPolicy?: RetryPolicy;
   onEvent?: AgentEventHandler;
 };
@@ -52,15 +57,45 @@ export class AgentRunner {
 
     while (steps < this.options.maxSteps) {
       const historySnapshot = this.options.history.snapshot();
-      const context = this.options.contextPolicy?.prepare(
-        historySnapshot,
-        lastInputTokens,
-      ) ?? {
-        action: "continue" as const,
-        messages: historySnapshot,
-        estimatedTokens: 0,
-        compactedToolResults: 0,
-      };
+      let context: PreparedContext;
+      if (this.options.contextManager === undefined) {
+        context = {
+          action: "continue",
+          systemPrompt: this.options.systemPrompt,
+          messages: historySnapshot,
+          estimatedTokens: 0,
+          compactedToolResults: 0,
+        };
+      } else {
+        try {
+          context = await this.options.contextManager.prepare({
+            baseSystemPrompt: this.options.systemPrompt,
+            messages: historySnapshot,
+            tools: this.options.tools.definitions(),
+            signal,
+          });
+        } catch (error) {
+          if (signal.aborted) {
+            return this.finish({
+              status: "cancelled",
+              steps,
+              toolCalls,
+              durationMs: performance.now() - startedAt,
+            });
+          }
+          this.emit({
+            type: "context_warning",
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return this.finish({
+            status: "internal_failed",
+            message: "Context preparation failed before the model request.",
+            steps,
+            toolCalls,
+            durationMs: performance.now() - startedAt,
+          });
+        }
+      }
       if (context.action === "stop") {
         return this.finish({
           status: "context_limit",
@@ -76,7 +111,7 @@ export class AgentRunner {
       let completed: Extract<ProviderEvent, { type: "message_completed" }> | undefined;
       try {
         const request = {
-          system: this.options.systemPrompt,
+          system: context.systemPrompt,
           messages: context.messages,
           tools: this.options.tools.definitions(),
         };
@@ -101,6 +136,7 @@ export class AgentRunner {
           }
           if (event.type === "usage") {
             lastInputTokens = event.inputTokens;
+            this.options.contextManager?.recordUsage(event.inputTokens);
             this.emit(event);
           } else if (event.type === "text_delta") {
             this.emit(event);

@@ -1,8 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import type { AgentEvent } from "../../../src/agent/events.js";
 import { ConversationHistory } from "../../../src/agent/history.js";
-import { AgentRunner, type ToolExecutorPort } from "../../../src/agent/runner.js";
+import { AgentRunner, type ContextManagerPort, type ToolExecutorPort } from "../../../src/agent/runner.js";
 import type {
   ModelProvider,
   ModelRequest,
@@ -308,7 +308,7 @@ describe("AgentRunner", () => {
     });
   });
 
-  test("returns context_limit without calling the provider when context policy stops", async () => {
+  test("returns context_limit without calling the provider when the context manager stops", async () => {
     const provider = new ScriptedProvider([[complete(textAssistant("unused"))]]);
     const history = new ConversationHistory();
     const runner = new AgentRunner({
@@ -317,13 +317,15 @@ describe("AgentRunner", () => {
       tools: emptyTools,
       maxSteps: 4,
       systemPrompt: "Be precise.",
-      contextPolicy: {
-        prepare: (messages) => ({
+      contextManager: {
+        prepare: async (input) => ({
           action: "stop",
-          messages,
+          systemPrompt: input.baseSystemPrompt,
+          messages: input.messages,
           estimatedTokens: 999,
           compactedToolResults: 0,
         }),
+        recordUsage: () => undefined,
       },
     });
 
@@ -331,6 +333,66 @@ describe("AgentRunner", () => {
 
     expect(result).toMatchObject({ status: "context_limit", steps: 0, toolCalls: 0 });
     expect(provider.requests).toHaveLength(0);
+  });
+
+  test("awaits the context manager and forwards prepared system prompt and messages", async () => {
+    const provider = new ScriptedProvider([
+      [
+        { type: "text_delta", text: "done" },
+        { type: "usage", inputTokens: 10, outputTokens: 2 },
+        complete(textAssistant("done")),
+      ],
+    ]);
+    const history = new ConversationHistory();
+    const prepare = vi.fn<ContextManagerPort["prepare"]>(async (input) => ({
+      action: "continue",
+      systemPrompt: `custom ${input.baseSystemPrompt}`,
+      messages: input.messages,
+      estimatedTokens: 42,
+      compactedToolResults: 0,
+    }));
+    const recordUsage = vi.fn();
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools: emptyTools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+      contextManager: { prepare, recordUsage },
+    });
+
+    const result = await runner.run("task", new AbortController().signal);
+
+    expect(result.status).toBe("completed");
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(provider.requests[0]?.system).toBe("custom Be precise.");
+    expect(recordUsage).toHaveBeenCalled();
+  });
+
+  test("a failing context manager returns internal_failed without calling the provider", async () => {
+    const provider = new ScriptedProvider([[complete(textAssistant("unused"))]]);
+    const history = new ConversationHistory();
+    const events: AgentEvent[] = [];
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools: emptyTools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+      contextManager: {
+        prepare: async () => {
+          throw new Error("context manager exploded");
+        },
+        recordUsage: () => undefined,
+      },
+      onEvent: (event) => events.push(event),
+    });
+
+    const result = await runner.run("task", new AbortController().signal);
+
+    expect(result).toMatchObject({ status: "internal_failed", steps: 0, toolCalls: 0 });
+    expect(provider.requests).toHaveLength(0);
+    expect(events.some((event) => event.type === "context_warning")).toBe(true);
   });
 
   test("emits a tool_started event with a compact input summary", async () => {

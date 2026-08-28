@@ -14,6 +14,9 @@ export type AgentEvent =
       ok: boolean;
       durationMs: number;
     }
+  | { type: "context_compaction_started" }
+  | { type: "context_compaction_completed"; summaryLength: number }
+  | { type: "context_warning"; message: string }
   | { type: "run_finished"; result: RunResult };
 
 export type AgentEventHandler = (event: AgentEvent) => void;
