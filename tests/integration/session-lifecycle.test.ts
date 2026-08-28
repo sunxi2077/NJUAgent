@@ -9,6 +9,7 @@ import { SlashCommandRouter } from "../../src/cli/command-router.js";
 import { registerCoreCommands } from "../../src/cli/commands/register-core-commands.js";
 import { CliSession } from "../../src/cli/session.js";
 import { createRuntime } from "../../src/runtime/create-runtime.js";
+import { SkillRegistry } from "../../src/skills/skill-registry.js";
 import { SessionManager } from "../../src/sessions/session-manager.js";
 import { SessionStore } from "../../src/sessions/session-store.js";
 import {
@@ -120,10 +121,17 @@ async function makeManager(home: string, workspace: string, provider: FakeProvid
   const prompt = new FakePrompt();
   const deps = { env: {}, config, prompt, renderer, provider };
   const initialRuntime = await createRuntime(session, deps);
+  const registry = {
+    resolve: () => undefined,
+    refresh: async () => ({ skills: [], diagnostics: [] }),
+    list: () => [],
+    diagnostics: () => [],
+  } as unknown as SkillRegistry;
   const manager = new SessionManager({
     initialRuntime,
     store,
     runtimeFactory: (target) => createRuntime(target, deps),
+    registry,
     clock: () => new Date("2026-08-28T12:00:00.000Z"),
   });
   return { manager, store, session, renderer, prompt, provider, paths };
@@ -161,10 +169,17 @@ describe("session lifecycle", () => {
     const deps = { env: {}, config, prompt, renderer, provider };
     const resumedSession = await store2.load(session.id);
     const runtime = await createRuntime(resumedSession, deps);
+    const registry = {
+      resolve: () => undefined,
+      refresh: async () => ({ skills: [], diagnostics: [] }),
+      list: () => [],
+      diagnostics: () => [],
+    } as unknown as SkillRegistry;
     const manager2 = new SessionManager({
       initialRuntime: runtime,
       store: store2,
       runtimeFactory: (target) => createRuntime(target, deps),
+      registry,
     });
     await manager2.resume(session.id.slice(0, 8));
     await manager2.runTurn("second task", new AbortController().signal);

@@ -41,6 +41,9 @@ function context(): CommandContext {
       compact: async () => {
         throw new Error("unused");
       },
+      activeSkill: () => undefined,
+      activateSkill: async () => { throw new Error("unused"); },
+      deactivateSkill: async () => undefined,
     },
     store: {
       list: async () => ({ sessions: [], diagnostics: [] }),

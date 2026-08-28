@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import os from "node:os";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { HELP_TEXT, isHelpRequest } from "./cli/help.js";
@@ -22,6 +23,7 @@ import { ConfigError, resolveConfig, type AppConfig } from "./config.js";
 import { AppError, isAppError } from "./errors/app-error.js";
 import { formatError } from "./errors/error-presenter.js";
 import { createRuntime } from "./runtime/create-runtime.js";
+import { SkillRegistry } from "./skills/skill-registry.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { SessionStore } from "./sessions/session-store.js";
 import { createEmptySession } from "./sessions/session-schema.js";
@@ -162,10 +164,15 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     );
     return 1;
   }
+  const skillRegistry = new SkillRegistry(
+    paths.userSkillsDirectory,
+    path.join(config.workspaceRoot, "skills"),
+  );
   const sessionManager = new SessionManager({
     initialRuntime,
     store: sessionStore,
     runtimeFactory: (target) => createRuntime(target, runtimeDeps),
+    registry: skillRegistry,
   });
 
   // 6. One-time welcome panel with an optional recent-session hint.

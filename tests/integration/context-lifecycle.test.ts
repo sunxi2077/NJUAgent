@@ -8,6 +8,7 @@ import type { Prompt } from "../../src/cli/prompt.js";
 import type { Renderer } from "../../src/cli/renderer.js";
 import type { ModelProvider, ModelRequest, ProviderEvent } from "../../src/providers/provider.js";
 import { createRuntime } from "../../src/runtime/create-runtime.js";
+import { SkillRegistry } from "../../src/skills/skill-registry.js";
 import { SessionManager } from "../../src/sessions/session-manager.js";
 import { SessionStore } from "../../src/sessions/session-store.js";
 import {
@@ -131,10 +132,17 @@ async function buildManager(home: string, workspace: string, provider: Determini
   const renderer = new MemoryRenderer();
   const deps = { env: {}, config, prompt, renderer, provider };
   const runtime = await createRuntime(session, deps);
+  const registry = {
+    resolve: () => undefined,
+    refresh: async () => ({ skills: [], diagnostics: [] }),
+    list: () => [],
+    diagnostics: () => [],
+  } as unknown as SkillRegistry;
   const manager = new SessionManager({
     initialRuntime: runtime,
     store,
     runtimeFactory: (target) => createRuntime(target, deps),
+    registry,
   });
   return { manager, store, session, provider, renderer };
 }
@@ -163,10 +171,17 @@ describe("context lifecycle", () => {
     const renderer = new MemoryRenderer();
     const deps = { env: {}, config, prompt, renderer, provider };
     const runtime = await createRuntime(loaded, deps);
+    const registry = {
+      resolve: () => undefined,
+      refresh: async () => ({ skills: [], diagnostics: [] }),
+      list: () => [],
+      diagnostics: () => [],
+    } as unknown as SkillRegistry;
     const manager2 = new SessionManager({
       initialRuntime: runtime,
       store: store2,
       runtimeFactory: (target) => createRuntime(target, deps),
+      registry,
     });
     expect(manager2.contextStatus().coveredMessageCount).toBe(covered);
     expect(manager2.contextStatus().compactionCount).toBe(1);

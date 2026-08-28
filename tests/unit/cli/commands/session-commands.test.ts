@@ -101,6 +101,9 @@ function makeContext(overrides: Partial<FakeServices> = {}) {
         compactionCount: 2,
       }),
       compact: async () => ({ action: "compacted", systemPrompt: "", messages: [], estimatedTokens: 0, compactedToolResults: 0 }),
+      activeSkill: () => undefined,
+      activateSkill: async () => { throw new Error("unused"); },
+      deactivateSkill: async () => undefined,
     },
     store: {
       list: async () => ({

@@ -25,7 +25,16 @@ export type CommandContext = {
   theme: TerminalTheme;
   sessionManager: Pick<
     SessionManager,
-    "active" | "isDirty" | "flush" | "createNew" | "resume" | "contextStatus" | "compact"
+    | "active"
+    | "isDirty"
+    | "flush"
+    | "createNew"
+    | "resume"
+    | "contextStatus"
+    | "compact"
+    | "activeSkill"
+    | "activateSkill"
+    | "deactivateSkill"
   >;
   store: Pick<SessionStore, "list">;
   signal: AbortSignal;

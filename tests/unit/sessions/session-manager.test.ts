@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { ConversationHistory } from "../../../src/agent/history.js";
 import type { RunResult } from "../../../src/agent/result.js";
 import { AppError } from "../../../src/errors/app-error.js";
+import { SkillRegistry } from "../../../src/skills/skill-registry.js";
 import { SessionManager, type ActiveRuntime } from "../../../src/sessions/session-manager.js";
 import {
   createEmptySession,
@@ -122,6 +123,8 @@ class FakeRuntime implements ActiveRuntime {
     };
   }
 
+  setActiveSkill(): void {}
+
   async dispose(): Promise<void> {
     this.disposed = true;
   }
@@ -137,10 +140,17 @@ function setup(overrides: { store?: FakeStore; factory?: (s: PersistedSessionV1)
       factoryCalls.push(session);
       return new FakeRuntime(session);
     });
+  const registry = {
+    resolve: () => undefined,
+    refresh: async () => ({ skills: [], diagnostics: [] }),
+    list: () => [],
+    diagnostics: () => [],
+  } as unknown as SkillRegistry;
   const manager = new SessionManager({
     initialRuntime,
     store,
     runtimeFactory: factory,
+    registry,
     clock: () => new Date("2026-08-28T10:00:00.000Z"),
     idFactory: () => "99999999-9999-4999-8999-999999999999",
   });

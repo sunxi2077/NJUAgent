@@ -3,7 +3,9 @@ import { ContextPolicy } from "../agent/context-policy.js";
 import { ModelCompactor } from "../agent/compactor.js";
 import { ConversationHistory } from "../agent/history.js";
 import { AgentRunner } from "../agent/runner.js";
+import { buildLayeredSystemPrompt } from "../skills/skill-prompt.js";
 import { buildSystemPrompt } from "../agent/system-prompt.js";
+import type { Skill } from "../skills/skill.js";
 import type { AgentEvent } from "../agent/events.js";
 import type { ContextStatus } from "../agent/context-types.js";
 import { formatPermissionQuestion, type Prompt } from "../cli/prompt.js";
@@ -104,6 +106,11 @@ export async function createRuntime(
     });
 
   const history = ConversationHistory.from(session.messages);
+  let activeSkill: Skill | undefined;
+  const systemPromptProvider = () =>
+    buildLayeredSystemPrompt(
+      activeSkill === undefined ? {} : { skill: activeSkill },
+    );
   const contextManager = new ContextManager({
     policy: new ContextPolicy({
       contextWindowTokens: deps.config.contextWindowTokens,
@@ -128,6 +135,7 @@ export async function createRuntime(
     tools: executor,
     maxSteps: deps.config.maxSteps,
     systemPrompt: buildSystemPrompt(),
+    systemPromptProvider,
     contextManager,
     retryPolicy: {
       maxAttempts: 3,
@@ -145,17 +153,20 @@ export async function createRuntime(
     contextState: () => contextManager.state(),
     contextStatus: (): ContextStatus =>
       contextManager.status({
-        baseSystemPrompt: buildSystemPrompt(),
+        baseSystemPrompt: systemPromptProvider(),
         messages: history.snapshot(),
         tools: executor.definitions(),
       }),
     compact: (focus, signal) =>
       contextManager.compactNow({
-        baseSystemPrompt: buildSystemPrompt(),
+        baseSystemPrompt: systemPromptProvider(),
         messages: history.snapshot(),
         tools: executor.definitions(),
         signal,
         ...(focus === undefined ? {} : { focus }),
       }),
+    setActiveSkill: (skill) => {
+      activeSkill = skill;
+    },
   };
 }

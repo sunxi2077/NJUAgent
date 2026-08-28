@@ -1,6 +1,9 @@
 import type { RunResult } from "../agent/result.js";
 import type { ContextState, ContextStatus, PreparedContext } from "../agent/context-types.js";
 import { ConversationHistory } from "../agent/history.js";
+import type { Skill } from "../skills/skill.js";
+import type { SkillRegistry } from "../skills/skill-registry.js";
+import { AppError } from "../errors/app-error.js";
 import type { SessionStore } from "./session-store.js";
 import {
   createEmptySession,
@@ -15,6 +18,7 @@ export type ActiveRuntime = {
   contextState(): ContextState;
   contextStatus(): ContextStatus;
   compact(focus: string | undefined, signal: AbortSignal): Promise<PreparedContext>;
+  setActiveSkill(skill: Skill | undefined): void;
   dispose?(): Promise<void> | void;
 };
 
@@ -29,6 +33,7 @@ export type SessionManagerOptions = {
   initialRuntime: ActiveRuntime;
   store: SessionStorePort;
   runtimeFactory: RuntimeFactory;
+  registry: SkillRegistry;
   clock?: () => Date;
   idFactory?: () => string;
 };
@@ -41,6 +46,7 @@ export type SessionManagerOptions = {
 export class SessionManager {
   readonly #store: SessionStorePort;
   readonly #runtimeFactory: RuntimeFactory;
+  readonly #registry: SkillRegistry;
   readonly #clock: () => Date;
   readonly #idFactory: () => string;
   #activeRuntime: ActiveRuntime;
@@ -49,9 +55,11 @@ export class SessionManager {
   constructor(options: SessionManagerOptions) {
     this.#store = options.store;
     this.#runtimeFactory = options.runtimeFactory;
+    this.#registry = options.registry;
     this.#clock = options.clock ?? (() => new Date());
     this.#idFactory = options.idFactory ?? (() => crypto.randomUUID());
     this.#activeRuntime = options.initialRuntime;
+    this.#restoreActiveSkill();
   }
 
   active(): PersistedSessionV1 {
@@ -101,6 +109,53 @@ export class SessionManager {
 
   contextStatus(): ContextStatus {
     return this.#activeRuntime.contextStatus();
+  }
+
+  activeSkill(): Skill | undefined {
+    const name = this.#activeRuntime.session.activeSkill;
+    if (name === null) {
+      return undefined;
+    }
+    return this.#registry.resolve(name);
+  }
+
+  async activateSkill(name: string): Promise<Skill> {
+    const skill = this.#registry.resolve(name);
+    if (skill === undefined) {
+      throw new AppError({
+        code: "SKILL_INVALID",
+        userMessage: `Unknown skill "${name}". Type /skills to list available skills.`,
+      });
+    }
+    this.#activeRuntime.setActiveSkill(skill);
+    this.#activeRuntime.session.activeSkill = skill.name;
+    this.#dirty = true;
+    await this.flush();
+    return skill;
+  }
+
+  async deactivateSkill(): Promise<void> {
+    this.#activeRuntime.setActiveSkill(undefined);
+    this.#activeRuntime.session.activeSkill = null;
+    this.#dirty = true;
+    await this.flush();
+  }
+
+  #restoreActiveSkill(): void {
+    const name = this.#activeRuntime.session.activeSkill;
+    if (name === null) {
+      return;
+    }
+    const skill = this.#registry.resolve(name);
+    if (skill === undefined) {
+      // Missing or invalid persisted skill: disable it and repair.
+      this.#activeRuntime.session.activeSkill = null;
+      this.#activeRuntime.setActiveSkill(undefined);
+      this.#dirty = true;
+      void this.flush();
+    } else {
+      this.#activeRuntime.setActiveSkill(skill);
+    }
   }
 
   /** Runs manual compaction and persists the updated context on success. */

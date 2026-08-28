@@ -31,6 +31,8 @@ export type AgentRunnerOptions = {
   tools: ToolExecutorPort;
   maxSteps: number;
   systemPrompt: string;
+  /** Dynamic prompt source (e.g. the active Skill layer) read every step. */
+  systemPromptProvider?: () => string;
   contextManager?: ContextManagerPort;
   retryPolicy?: RetryPolicy;
   onEvent?: AgentEventHandler;
@@ -69,7 +71,8 @@ export class AgentRunner {
       } else {
         try {
           context = await this.options.contextManager.prepare({
-            baseSystemPrompt: this.options.systemPrompt,
+            baseSystemPrompt:
+              this.options.systemPromptProvider?.() ?? this.options.systemPrompt,
             messages: historySnapshot,
             tools: this.options.tools.definitions(),
             signal,
