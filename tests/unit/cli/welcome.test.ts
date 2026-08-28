@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { formatWelcome, type WelcomeView } from "../../../src/cli/welcome.js";
 import { createTheme } from "../../../src/cli/theme.js";
+import { terminalWidth } from "../../../src/cli/terminal-text.js";
 
 const view: WelcomeView = {
   version: "0.2.0",
@@ -25,18 +26,31 @@ describe("formatWelcome", () => {
     expect(plain).not.toContain("\x1b[");
   });
 
-  test("enabled theme renders a boxed panel with ANSI brand text", () => {
-    const colored = formatWelcome(view, createTheme({ enabled: true }), { columns: 80 });
-    const lines = stripAnsi(colored).split("\n");
-    expect(lines[0]).toMatch(/^╭─ NJUAgent v0\.2\.0 /u);
-    expect(lines[1]).toContain("│ workspace  /tmp/demo");
-    expect(lines[2]).toContain("│ model      deepseek-v4-flash");
-    expect(lines[3]).toContain("│ session    abc123 · new · balanced");
-    expect(lines[4]).toMatch(/^╰─+╯$/u);
-    expect(lines[5]).toBe("Type /help for commands · Ctrl-C cancels");
-    expect([...lines[0]!]).toHaveLength(80);
-    expect(colored).toContain("\x1b[38;5;54m");
-    expect(colored).toContain("\x1b[38;5;141m");
+  test("wide TTY shows the NJU logo inside a visible 72-column-or-smaller frame", () => {
+    const output = formatWelcome(view, createTheme({ enabled: true }), { columns: 100 });
+    const plain = stripAnsi(output);
+    expect(plain).toContain("███╗   ██╗");
+    expect(plain).toContain("NJUAgent v0.2.0");
+    expect(output).toContain("\x1b[38;5;141m");
+    expect(output).toContain("\x1b[38;5;99m");
+    const frame = plain.split("\n").filter((line) => /^[╭│╰]/u.test(line));
+    expect(frame.every((line) => terminalWidth(line) <= 72)).toBe(true);
+    expect(frame.every((line) => terminalWidth(line) === terminalWidth(frame[0]!))).toBe(true);
+  });
+
+  test.each([60, 40])("%i columns uses a compact complete frame", (columns) => {
+    const plain = stripAnsi(formatWelcome(view, createTheme({ enabled: true }), { columns }));
+    expect(plain).not.toContain("███╗");
+    expect(plain).toContain("╭");
+    expect(plain).toContain("╯");
+    expect(plain.split("\n").every((line) => terminalWidth(line) <= columns)).toBe(true);
+  });
+
+  test("an extremely narrow terminal falls back to unboxed text", () => {
+    const plain = stripAnsi(formatWelcome(view, createTheme({ enabled: true }), { columns: 30 }));
+    expect(plain).toContain("NJUAgent v0.2.0");
+    expect(plain).not.toMatch(/[╭╮╰╯│]/u);
+    expect(plain.split("\n").every((line) => terminalWidth(line) <= 30)).toBe(true);
   });
 
   test("caps a wide terminal and renders an actionable resume hint", () => {
@@ -46,18 +60,7 @@ describe("formatWelcome", () => {
       { columns: 120 },
     );
     const lines = stripAnsi(colored).split("\n");
-    expect([...lines[0]!]).toHaveLength(88);
     expect(lines.at(-1)).toBe("Use /resume 8e6a2f (fix parser) to continue.");
-  });
-
-  test("does not exceed a narrow terminal width", () => {
-    const colored = formatWelcome(
-      view,
-      createTheme({ enabled: true }),
-      { columns: 32 },
-    );
-    const lines = stripAnsi(colored).split("\n").slice(0, 5);
-    expect(lines.every((line) => [...line].length <= 32)).toBe(true);
   });
 
   test("truncates very long workspace and model values", () => {
