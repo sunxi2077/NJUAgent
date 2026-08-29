@@ -123,4 +123,36 @@ describe("ReadlinePrompt", () => {
     await expect(first).resolves.toBe("/help");
     await expect(prompt.read("› ")).resolves.toBe("/status");
   });
+
+  test("confirm appends (y/N) and resolves true only for y/yes", async () => {
+    const { prompt, rl } = makePrompt();
+    const cases: Array<[string, boolean]> = [
+      ["y", true],
+      ["yes", true],
+      ["Y", true],
+      ["YES", true],
+      ["n", false],
+      ["no", false],
+      ["", false],
+      ["maybe", false],
+    ];
+    for (const [input, expected] of cases) {
+      const pending = prompt.confirm("Continue?");
+      expect(rl.promptText).toBe("Continue? (y/N) ");
+      rl.emitLine(input);
+      await expect(pending).resolves.toBe(expected);
+    }
+  });
+
+  test("confirm treats Enter (empty) and interrupt/EOF as deny", async () => {
+    const { prompt, rl } = makePrompt();
+    // Empty line, the default Enter path, is a deny.
+    const empty = prompt.confirm("Continue?");
+    rl.emitLine("  ");
+    await expect(empty).resolves.toBe(false);
+    // Interrupt (Ctrl-C) resolves the pending confirm as null -> deny.
+    const interrupted = prompt.confirm("Continue?");
+    prompt.interrupt();
+    await expect(interrupted).resolves.toBe(false);
+  });
 });

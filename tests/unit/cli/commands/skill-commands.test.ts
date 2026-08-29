@@ -9,6 +9,8 @@ import type { Skill, SkillSource } from "../../../../src/skills/skill.js";
 import { AppError } from "../../../../src/errors/app-error.js";
 
 class MemoryRenderer implements Renderer {
+  permissionRequest(): void {}
+  permissionDecision(): void {}
   readonly printed: string[] = [];
   readonly errors: string[] = [];
   handle(): void {}

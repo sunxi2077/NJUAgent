@@ -6,6 +6,8 @@ import type { Renderer } from "../../../src/cli/renderer.js";
 import { createTheme } from "../../../src/cli/theme.js";
 
 class MemoryRenderer implements Renderer {
+  permissionRequest(): void {}
+  permissionDecision(): void {}
   readonly errors: string[] = [];
   readonly printed: string[] = [];
   handle(): void {}

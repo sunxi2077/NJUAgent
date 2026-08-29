@@ -5,8 +5,6 @@ import {
   type Interface,
 } from "node:readline";
 
-import type { ToolExecutionRequest } from "../tools/tool.js";
-
 export interface Prompt {
   /** Reads one line of user input; resolves `null` on EOF or after `interrupt()`. */
   read(promptText: string): Promise<string | null>;
@@ -142,30 +140,4 @@ export class ReadlinePrompt implements Prompt {
       this.#rl.close();
     }
   }
-}
-
-const MAX_SUMMARY_CHARS = 120;
-
-function summarizeInput(input: unknown): string {
-  let serialized: string;
-  try {
-    serialized = JSON.stringify(input);
-  } catch {
-    serialized = String(input);
-  }
-  if (serialized === undefined) {
-    serialized = String(input);
-  }
-  if (serialized.length <= MAX_SUMMARY_CHARS) {
-    return serialized;
-  }
-  return `${serialized.slice(0, MAX_SUMMARY_CHARS)}…`;
-}
-
-/** Formats the permission question shown to the user before an `ask` decision. */
-export function formatPermissionQuestion(
-  call: ToolExecutionRequest,
-  reason: string,
-): string {
-  return `Allow ${call.name}(${summarizeInput(call.input)})? ${reason}`;
 }

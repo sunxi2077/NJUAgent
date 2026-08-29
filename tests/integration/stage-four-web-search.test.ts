@@ -108,6 +108,13 @@ class FakePrompt implements Prompt {
 }
 
 class MemoryRenderer implements Renderer {
+  readonly permissionEvents: string[] = [];
+  permissionRequest(): void {
+    this.permissionEvents.push("request");
+  }
+  permissionDecision(_call: unknown, approved: boolean): void {
+    this.permissionEvents.push(`decision:${approved}`);
+  }
   handle(): void {}
   toolOutput(): void {}
   print(): void {}
@@ -259,5 +266,21 @@ describe("stage four web search", () => {
     expect(JSON.stringify(history)).toContain(
       "Web search sends the query to an external service",
     );
+  });
+
+  test("permission flow asks once and records request before decision", async () => {
+    const workspace = await tempDirectory("nju-web-flow-");
+    const provider = new ScriptedProvider();
+    const webProvider = new FakeWebProvider();
+    const { manager, renderer, prompt } = await makeRuntime({
+      workspace,
+      config: makeConfig(workspace, { tavilyApiKey: "tvly-test" }),
+      provider,
+      webSearchProvider: webProvider,
+    });
+    prompt.confirmResult = true;
+    await manager.runTurn("search the web", new AbortController().signal);
+    expect(renderer.permissionEvents).toEqual(["request", "decision:true"]);
+    expect(webProvider.queries).toHaveLength(1);
   });
 });

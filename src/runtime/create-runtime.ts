@@ -8,7 +8,7 @@ import { buildSystemPrompt } from "../agent/system-prompt.js";
 import type { Skill } from "../skills/skill.js";
 import type { AgentEvent } from "../agent/events.js";
 import type { ContextStatus } from "../agent/context-types.js";
-import { formatPermissionQuestion, type Prompt } from "../cli/prompt.js";
+import type { Prompt } from "../cli/prompt.js";
 import type { Renderer } from "../cli/renderer.js";
 import type { AppConfig } from "../config.js";
 import type { ModelProvider } from "../providers/provider.js";
@@ -126,8 +126,14 @@ export async function createRuntime(
   const executor = new ToolExecutor({
     registry,
     permissionPolicy,
-    confirm: (call, reason) =>
-      deps.prompt.confirm(formatPermissionQuestion(call, reason)),
+    confirm: async (call, reason) => {
+      deps.renderer.permissionRequest(call, reason);
+      const approved = await deps.prompt.confirm(
+        "Your choice — [y] Allow once, [N] Deny",
+      );
+      deps.renderer.permissionDecision(call, approved);
+      return approved;
+    },
     onOutput: (call, stream, text) => deps.renderer.toolOutput(call, stream, text),
     onResult: (call, result) => evidenceLedger.observe(call, result),
     onObserverError: (error) =>

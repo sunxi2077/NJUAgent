@@ -58,6 +58,8 @@ class FakePrompt implements Prompt {
 }
 
 class MemoryRenderer implements Renderer {
+  permissionRequest(): void {}
+  permissionDecision(): void {}
   handle(): void {}
   toolOutput(): void {}
   print(): void {}

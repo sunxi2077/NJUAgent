@@ -16,6 +16,10 @@ export interface Renderer {
     stream: ToolOutputStream,
     text: string,
   ): void;
+  /** Shows a permission prompt card/records before the user is asked. */
+  permissionRequest(call: ToolExecutionRequest, reason: string): void;
+  /** Records whether a permission prompt was allowed or denied. */
+  permissionDecision(call: ToolExecutionRequest, approved: boolean): void;
   /** Writes a permanent, non-error text line (e.g. slash-command output). */
   print(text: string): void;
   error(message: string): void;
@@ -40,6 +44,43 @@ export type TerminalRendererOptions = {
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const DEFAULT_MAX_LIVE_OUTPUT_BYTES = 65_536;
+const MAX_PERMISSION_SUMMARY_CODE_POINTS = 100;
+const PERMISSION_LABEL_WIDTH = 8;
+
+/** Bounds one text run to a single line of at most 100 code points. */
+function oneLineBounded(text: string): string {
+  const single = text.replace(/\s+/gu, " ").trim();
+  const codePoints = [...single];
+  if (codePoints.length <= MAX_PERMISSION_SUMMARY_CODE_POINTS) {
+    return single;
+  }
+  return `${codePoints.slice(0, MAX_PERMISSION_SUMMARY_CODE_POINTS).join("")}…`;
+}
+
+/**
+ * Human-readable one-line summary of a tool call for permission prompts.
+ * Prefers the most actionable single value (path, command, query, pattern),
+ * collapses whitespace, and bounds the length.
+ */
+export function summarizeToolInput(call: ToolExecutionRequest): string {
+  const input = call.input;
+  if (typeof input === "object" && input !== null && !Array.isArray(input)) {
+    const record = input as Record<string, unknown>;
+    for (const key of ["path", "command", "query", "pattern"] as const) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim() !== "") {
+        return oneLineBounded(value);
+      }
+    }
+  }
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(input);
+  } catch {
+    serialized = String(input);
+  }
+  return oneLineBounded(serialized ?? "");
+}
 
 function conciseToolSummary(summary: string): string {
   try {
@@ -232,6 +273,55 @@ export class TerminalRenderer implements Renderer {
 
   print(text: string): void {
     this.#permanent(text);
+  }
+
+  permissionRequest(call: ToolExecutionRequest, reason: string): void {
+    if (this.#interactive) {
+      this.#writePermissionCard(call, reason);
+    } else {
+      const lines = [
+        `[permission] tool=${call.name}`,
+        `[permission] action=${summarizeToolInput(call)}`,
+        `[permission] reason=${oneLineBounded(reason)}`,
+      ];
+      this.#write(`${lines.join("\n")}\n`);
+    }
+  }
+
+  permissionDecision(call: ToolExecutionRequest, approved: boolean): void {
+    if (this.#interactive) {
+      const label = approved
+        ? this.#theme.success(`✓ Allowed ${call.name} once`)
+        : this.#theme.error(`✗ Denied ${call.name}`);
+      this.#permanent(label);
+      return;
+    }
+    this.#write(`[permission] decision=${approved ? "allowed" : "denied"}\n`);
+  }
+
+  /**
+   * Writes the permission card without redrawing a transient status: the
+   * spinner line is cleared and stays cleared while the user answers.
+   */
+  #writePermissionCard(call: ToolExecutionRequest, reason: string): void {
+    this.#inputSurface?.suspendForOutput();
+    try {
+      if (this.#transient !== "") {
+        this.#clearLine();
+        this.#transient = "";
+      }
+      const label = (text: string): string => text.padEnd(PERMISSION_LABEL_WIDTH);
+      const card = [
+        this.#theme.warning("╭─ ⚠ Permission required"),
+        `│ ${label("Tool")}${this.#theme.brandStrong(call.name)}`,
+        `│ ${label("Action")}${this.#theme.brandStrong(summarizeToolInput(call))}`,
+        `│ ${label("Reason")}${oneLineBounded(reason)}`,
+        this.#theme.warning("╰─"),
+      ];
+      this.#stdout.write(`${card.join("\n")}\n`);
+    } finally {
+      this.#inputSurface?.resumeAfterOutput();
+    }
   }
 
   error(message: string): void {

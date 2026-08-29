@@ -3,7 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 
 import type { AgentEvent } from "../../../src/agent/events.js";
 import type { RunResult } from "../../../src/agent/result.js";
-import { TerminalRenderer } from "../../../src/cli/renderer.js";
+import { summarizeToolInput, TerminalRenderer } from "../../../src/cli/renderer.js";
 import type { ToolExecutionRequest } from "../../../src/tools/tool.js";
 
 class MemoryStdout {
@@ -531,5 +531,139 @@ describe("TerminalRenderer assistant anchors", () => {
     expect(text).toContain("[goal] evaluating attempt=2\n");
     expect(text).toContain('[goal] incomplete missing="npm run typecheck has not run"\n');
     expect(text).not.toContain("\x1b[");
+  });
+});
+
+describe("TerminalRenderer permission prompts", () => {
+  const webCall: ToolExecutionRequest = {
+    id: "c1",
+    name: "web_search",
+    input: { query: "AbortSignal timeout" },
+  };
+  const reason = "Web search sends the query to an external service";
+
+  test("TTY permissionRequest renders a warning card with tool, action, and reason", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.permissionRequest(webCall, reason);
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("╭─ ⚠ Permission required");
+    expect(visible).toContain("│ Tool    web_search");
+    expect(visible).toContain("│ Action  AbortSignal timeout");
+    expect(visible).toContain("│ Reason  Web search sends the query to an external service");
+    expect(visible).toContain("╰─");
+    expect(stdout.text()).toContain("\x1b[33m");
+    expect(stdout.text()).toContain("\x1b[38;5;141m");
+  });
+
+  test("TTY permissionRequest clears a transient status line before the card", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "model_started", step: 1 });
+    renderer.permissionRequest(webCall, reason);
+    const visible = stripVTControlCharacters(stdout.text());
+    // The spinner status was printed once at model_started and is not redrawn
+    // after the permission card.
+    expect(visible.lastIndexOf("model step 1")).toBeLessThan(
+      visible.indexOf("Permission required"),
+    );
+  });
+
+  test("TTY permissionRequest collapses multi-line input into one bounded action line", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.permissionRequest(
+      {
+        id: "c2",
+        name: "run_command",
+        input: { command: "npm test\n--reporter\n" + "x".repeat(300) },
+      },
+      reason,
+    );
+    const visible = stripVTControlCharacters(stdout.text());
+    const actionLine = visible.split("\n").find((line) => line.startsWith("│ Action"));
+    expect(actionLine).toBeDefined();
+    // Single line, no embedded newline, bounded length with an ellipsis.
+    expect(actionLine!.split("\n")).toHaveLength(1);
+    expect(actionLine!.length).toBeLessThan(160);
+    expect(actionLine!).toMatch(/…$/u);
+    expect(actionLine!).not.toContain("x".repeat(300));
+  });
+
+  test("TTY permissionDecision records an allow and a deny", () => {
+    const allowedOut = new MemoryStdout();
+    const allowed = ttyRenderer(allowedOut);
+    allowed.permissionDecision(webCall, true);
+    const allowedVisible = stripVTControlCharacters(allowedOut.text());
+    expect(allowedVisible).toContain("✓ Allowed web_search once");
+    expect(allowedOut.text()).toContain("\x1b[32m");
+
+    const deniedOut = new MemoryStdout();
+    const denied = ttyRenderer(deniedOut);
+    denied.permissionDecision(webCall, false);
+    const deniedVisible = stripVTControlCharacters(deniedOut.text());
+    expect(deniedVisible).toContain("✗ Denied web_search");
+    expect(deniedOut.text()).toContain("\x1b[31m");
+  });
+
+  test("non-TTY permissionRequest and decision emit stable [permission] records", () => {
+    const stdout = new MemoryStdout();
+    const renderer = plainRenderer(stdout);
+    renderer.permissionRequest(webCall, reason);
+    renderer.permissionDecision(webCall, true);
+    const text = stdout.text();
+    expect(text).toContain("[permission] tool=web_search\n");
+    expect(text).toContain("[permission] action=AbortSignal timeout\n");
+    expect(text).toContain(
+      "[permission] reason=Web search sends the query to an external service\n",
+    );
+    expect(text).toContain("[permission] decision=allowed\n");
+    expect(text).not.toContain("\x1b[");
+  });
+
+  test("non-TTY denial emits decision=denied", () => {
+    const stdout = new MemoryStdout();
+    const renderer = plainRenderer(stdout);
+    renderer.permissionDecision(webCall, false);
+    expect(stdout.text()).toContain("[permission] decision=denied\n");
+  });
+
+  test("NO_COLOR permission card contains no ANSI", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout, true);
+    renderer.permissionRequest(webCall, reason);
+    renderer.permissionDecision(webCall, false);
+    expect(stdout.text()).not.toContain("\x1b[");
+    expect(stdout.text()).toContain("[permission] tool=web_search\n");
+    expect(stdout.text()).toContain("[permission] decision=denied\n");
+  });
+});
+
+describe("summarizeToolInput", () => {
+  test("prefers path, command, query, then pattern and collapses whitespace", () => {
+    expect(
+      summarizeToolInput({ id: "c", name: "run_command", input: { command: "npm  test\n--x" } }),
+    ).toBe("npm test --x");
+    expect(
+      summarizeToolInput({ id: "c", name: "read_file", input: { path: "src/a.ts" } }),
+    ).toBe("src/a.ts");
+    expect(
+      summarizeToolInput({ id: "c", name: "web_search", input: { query: "abort timeout" } }),
+    ).toBe("abort timeout");
+    expect(
+      summarizeToolInput({ id: "c", name: "search_text", input: { pattern: "parsePort" } }),
+    ).toBe("parsePort");
+  });
+
+  test("bounds the summary and adds an ellipsis", () => {
+    const long = "y".repeat(400);
+    const summary = summarizeToolInput({ id: "c", name: "run_command", input: { command: long } });
+    expect(summary.length).toBeLessThan(150);
+    expect(summary).toMatch(/…$/u);
+  });
+
+  test("falls back to a JSON serialization for other inputs", () => {
+    const summary = summarizeToolInput({ id: "c", name: "plan_write", input: { items: [] } });
+    expect(summary).toBe('{"items":[]}');
   });
 });

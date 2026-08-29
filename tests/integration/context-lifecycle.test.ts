@@ -83,6 +83,8 @@ class FakePrompt implements Prompt {
 }
 
 class MemoryRenderer implements Renderer {
+  permissionRequest(): void {}
+  permissionDecision(): void {}
   readonly handled: string[] = [];
   handle(): void {}
   toolOutput(): void {}

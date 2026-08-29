@@ -33,6 +33,13 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/in_progress/u);
     expect(prompt).toMatch(/never mark an unfinished step as completed/u);
   });
+
+  test("discourages redundant external tools and consecutive parse commands", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/do not call additional external tools/u);
+    expect(prompt).toMatch(/view and parse the same result/u);
+    expect(prompt).toMatch(/single command/u);
+  });
 });
 
 describe("buildSystemPrompt summary layer", () => {
