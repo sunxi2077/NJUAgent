@@ -48,6 +48,10 @@ export type GoalEvaluationDecision = {
   nextInstruction?: string;
 };
 
+export interface GoalEvaluatorPort {
+  evaluate(input: GoalEvaluationInput): Promise<GoalEvaluationDecision>;
+}
+
 export function createEmptyEvidenceState(): EvidenceState {
   return { workspaceRevision: 0, changedPaths: [], commands: [] };
 }
