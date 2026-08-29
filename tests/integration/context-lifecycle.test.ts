@@ -109,6 +109,8 @@ function makeConfig(workspaceRoot: string): AppConfig {
     workspaceRoot,
     permissionMode: "balanced",
     debug: false,
+  webSearchTimeoutMs: 15000,
+  webSearchMaxContentChars: 6000,
   };
 }
 

@@ -61,6 +61,40 @@ describe("loadConfig (compatibility wrapper)", () => {
     expect(config.permissionMode).toBe("balanced");
     expect(config.debug).toBe(false);
     expect(config.workspaceRoot).toBe(process.cwd());
+    expect(config.tavilyApiKey).toBeUndefined();
+    expect(config.webSearchTimeoutMs).toBe(15000);
+    expect(config.webSearchMaxContentChars).toBe(6000);
+  });
+
+  test("web search settings accept overrides and a present key", () => {
+    const config = loadConfig(
+      {
+        ...validEnv,
+        TAVILY_API_KEY: "  tvly-secret  ",
+        WEB_SEARCH_TIMEOUT_MS: "9000",
+        WEB_SEARCH_MAX_CONTENT_CHARS: "400",
+      },
+      [],
+    );
+    expect(config.tavilyApiKey).toBe("tvly-secret");
+    expect(config.webSearchTimeoutMs).toBe(9000);
+    expect(config.webSearchMaxContentChars).toBe(400);
+  });
+
+  test("rejects invalid web search numeric settings", () => {
+    for (const bad of ["0", "-1", "abc", "1.5"]) {
+      expect(() =>
+        loadConfig({ ...validEnv, WEB_SEARCH_TIMEOUT_MS: bad }, []),
+      ).toThrow(ConfigError);
+      expect(() =>
+        loadConfig({ ...validEnv, WEB_SEARCH_MAX_CONTENT_CHARS: bad }, []),
+      ).toThrow(ConfigError);
+    }
+  });
+
+  test("treats a blank Tavily key as unavailable", () => {
+    const blank = loadConfig({ ...validEnv, TAVILY_API_KEY: "   " }, []);
+    expect(blank.tavilyApiKey).toBeUndefined();
   });
 
   test("accepts positive integer overrides from the environment", () => {

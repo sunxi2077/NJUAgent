@@ -19,6 +19,10 @@ export type AppConfig = {
   workspaceRoot: string;
   permissionMode: PermissionMode;
   debug: boolean;
+  /** Optional Tavily key; when absent the web_search tool is not registered. */
+  tavilyApiKey?: string;
+  webSearchTimeoutMs: number;
+  webSearchMaxContentChars: number;
 };
 
 export class ConfigError extends AppError {
@@ -41,6 +45,8 @@ const NUMERIC_DEFAULTS = {
   CONTEXT_COMPACT_RATIO: 0.70,
   CONTEXT_RECENT_MESSAGES: 12,
   CONTEXT_SAFETY_TOKENS: 2_048,
+  WEB_SEARCH_TIMEOUT_MS: 15_000,
+  WEB_SEARCH_MAX_CONTENT_CHARS: 6_000,
 } as const;
 
 function readPositiveInt(
@@ -202,6 +208,7 @@ export function resolveConfig(input: ResolveConfigInput): AppConfig {
       "The hard input budget (CONTEXT_WINDOW_TOKENS - AGENT_MAX_TOKENS - CONTEXT_SAFETY_TOKENS) must be positive.",
     );
   }
+  const tavilyKey = input.env.TAVILY_API_KEY?.trim() ?? "";
 
   return {
     apiKey,
@@ -240,6 +247,17 @@ export function resolveConfig(input: ResolveConfigInput): AppConfig {
     permissionMode:
       args.permissionMode ?? input.persisted?.permissionMode ?? "balanced",
     debug: args.debug,
+    ...(tavilyKey === "" ? {} : { tavilyApiKey: tavilyKey }),
+    webSearchTimeoutMs: readPositiveInt(
+      input.env,
+      "WEB_SEARCH_TIMEOUT_MS",
+      NUMERIC_DEFAULTS.WEB_SEARCH_TIMEOUT_MS,
+    ),
+    webSearchMaxContentChars: readPositiveInt(
+      input.env,
+      "WEB_SEARCH_MAX_CONTENT_CHARS",
+      NUMERIC_DEFAULTS.WEB_SEARCH_MAX_CONTENT_CHARS,
+    ),
   };
 }
 
