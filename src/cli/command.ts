@@ -38,6 +38,9 @@ export type CommandContext = {
     | "deactivateSkill"
     | "plan"
     | "clearPlan"
+    | "goal"
+    | "setGoal"
+    | "clearGoal"
   >;
   store: Pick<SessionStore, "list">;
   skillRegistry: Pick<SkillRegistry, "refresh" | "list" | "resolve" | "diagnostics">;

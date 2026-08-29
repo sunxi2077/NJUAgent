@@ -7,6 +7,7 @@ import { AppError } from "../errors/app-error.js";
 import type { PermissionMode } from "../config.js";
 import type { PlanManager } from "../planning/plan-manager.js";
 import type { PlanState } from "../planning/plan.js";
+import type { GoalState } from "../goals/goal.js";
 import type { SessionStore } from "./session-store.js";
 import {
   createEmptySession,
@@ -120,6 +121,46 @@ export class SessionManager {
     this.#dirty = true;
     await this.flush();
     return plan;
+  }
+
+  goal(): GoalState | null {
+    const goal = this.#activeRuntime.session.goal;
+    return goal === null ? null : structuredClone(goal);
+  }
+
+  async setGoal(condition: string): Promise<GoalState> {
+    const trimmed = condition.trim();
+    const length = [...trimmed].length;
+    if (length < 1 || length > 1000) {
+      throw new AppError({
+        code: "GOAL_INVALID",
+        userMessage: "Goal condition must be 1-1000 characters.",
+      });
+    }
+    const now = this.#now();
+    const goal: GoalState = {
+      condition: trimmed,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+      automaticContinuations: 0,
+    };
+    this.#activeRuntime.session.goal = goal;
+    this.#dirty = true;
+    await this.flush();
+    return structuredClone(goal);
+  }
+
+  async clearGoal(): Promise<void> {
+    const session = this.#activeRuntime.session;
+    if (session.goal !== null) {
+      // Briefly cancelled (recorded decision) then removed entirely; the
+      // externally visible and persisted result is null, matching "clear".
+      session.goal = { ...session.goal, status: "cancelled", updatedAt: this.#now() };
+    }
+    session.goal = null;
+    this.#dirty = true;
+    await this.flush();
   }
 
   activeSkill(): Skill | undefined {

@@ -271,6 +271,43 @@ describe("SessionManager", () => {
     expect(manager.plan().items).toEqual([]);
   });
 
+  test("setGoal creates an active goal with timestamps and persists it", async () => {
+    const { manager, store } = setup();
+    const goal = await manager.setGoal("  npm test exits 0 after the fix  ");
+    expect(goal.condition).toBe("npm test exits 0 after the fix");
+    expect(goal.status).toBe("active");
+    expect(goal.automaticContinuations).toBe(0);
+    expect(goal.lastDecision).toBeUndefined();
+    const saved = store.files.get(ID)!.goal;
+    expect(saved?.condition).toBe("npm test exits 0 after the fix");
+  });
+
+  test("setGoal replaces an existing goal and resets counters", async () => {
+    const { manager } = setup();
+    await manager.setGoal("first condition");
+    const goal = await manager.setGoal("second condition");
+    expect(goal.condition).toBe("second condition");
+    expect(manager.goal()?.condition).toBe("second condition");
+    expect(goal.status).toBe("active");
+    expect(goal.automaticContinuations).toBe(0);
+  });
+
+  test("setGoal rejects blank and overlong conditions", async () => {
+    const { manager } = setup();
+    await expect(manager.setGoal("   ")).rejects.toMatchObject({ code: "GOAL_INVALID" });
+    await expect(manager.setGoal("x".repeat(1001))).rejects.toMatchObject({
+      code: "GOAL_INVALID",
+    });
+  });
+
+  test("clearGoal removes the persisted goal", async () => {
+    const { manager, store } = setup();
+    await manager.setGoal("some goal");
+    await manager.clearGoal();
+    expect(manager.goal()).toBeNull();
+    expect(store.files.get(ID)!.goal).toBeNull();
+  });
+
   test("createNew refuses to switch when flush fails", async () => {
     const { manager, store, initialRuntime, factoryCalls } = setup();
     store.failEverySave = true;

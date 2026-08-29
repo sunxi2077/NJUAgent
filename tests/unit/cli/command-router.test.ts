@@ -54,6 +54,15 @@ function context(): CommandContext {
       deactivateSkill: async () => undefined,
       plan: () => ({ items: [] }),
       clearPlan: async () => ({ items: [] }),
+      goal: () => null,
+      setGoal: async (condition: string) => ({
+        condition,
+        status: "active" as const,
+        createdAt: "",
+        updatedAt: "",
+        automaticContinuations: 0,
+      }),
+      clearGoal: async () => undefined,
     },
     store: {
       list: async () => ({ sessions: [], diagnostics: [] }),
@@ -156,5 +165,44 @@ describe("SlashCommandRouter", () => {
     expect(result).toEqual({ kind: "handled", stateChanged: false });
     expect(shown).toEqual({ items: [] });
     expect(cleared).toBe(false);
+  });
+
+  test("/goal create, view, and clear stay entirely local", async () => {
+    const router = new SlashCommandRouter();
+    let created: string | undefined;
+    let viewed = false;
+    let cleared = false;
+    router.register({
+      name: "goal",
+      usage: "/goal [clear|<completion condition>]",
+      description: "Manage the completion goal",
+      async execute(args, ctx) {
+        const sessionManager = ctx.sessionManager as unknown as {
+          setGoal: (c: string) => Promise<{ condition: string }>;
+          clearGoal: () => Promise<void>;
+          goal: () => { condition: string } | null;
+        };
+        const argument = args.trim();
+        if (argument === "") {
+          viewed = sessionManager.goal() !== null;
+          return { kind: "continue" as const, stateChanged: false };
+        }
+        if (argument === "clear") {
+          cleared = true;
+          await sessionManager.clearGoal();
+          return { kind: "continue" as const, stateChanged: true };
+        }
+        const goal = await sessionManager.setGoal(argument);
+        created = goal.condition;
+        return { kind: "continue" as const, stateChanged: true };
+      },
+    });
+    const ctx = context();
+    await router.route("/goal fix the parser and run npm test", ctx);
+    expect(created).toBe("fix the parser and run npm test");
+    await router.route("/goal", ctx);
+    expect(viewed).toBe(false);
+    await router.route("/goal clear", ctx);
+    expect(cleared).toBe(true);
   });
 });

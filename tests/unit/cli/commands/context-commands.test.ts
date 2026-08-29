@@ -87,6 +87,9 @@ function makeContext(overrides: {
       deactivateSkill: async () => undefined,
       plan: () => ({ items: [] }),
       clearPlan: async () => ({ items: [] }),
+      goal: () => null,
+      setGoal: async () => { throw new Error("unused"); },
+      clearGoal: async () => undefined,
     },
     store: {
       list: async () => ({ sessions: [], diagnostics: [] }),

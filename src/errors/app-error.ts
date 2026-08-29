@@ -11,6 +11,7 @@ export type AppErrorCode =
   | "COMPACTION_FAILED"
   | "SKILL_INVALID"
   | "PLAN_INVALID"
+  | "GOAL_INVALID"
   | "USER_CANCELLED"
   | "INTERNAL";
 

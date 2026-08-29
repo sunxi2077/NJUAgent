@@ -153,6 +153,29 @@ describe("session lifecycle", () => {
     expect(saved.title).toBe("first task");
   });
 
+  test("a goal and plan survive checkpoint, resume, and clear; /new starts empty", async () => {
+    const home = await tempDirectory("nju-lifecycle-");
+    const workspace = await tempDirectory("nju-lifecycle-work-");
+    const provider = new FakeProvider();
+    const { manager, store, session } = await makeManager(home, workspace, provider);
+
+    await manager.setGoal("npm test exits 0 after the requested validation");
+    expect(manager.goal()?.condition).toContain("npm test");
+
+    const created = await manager.createNew();
+    expect(manager.goal()).toBeNull();
+    expect(manager.plan().items).toEqual([]);
+
+    await manager.resume(session.id.slice(0, 8));
+    expect(manager.goal()?.condition).toContain("npm test");
+
+    await manager.clearGoal();
+    expect(manager.goal()).toBeNull();
+    const saved = await store.load(session.id);
+    expect(saved.goal).toBeNull();
+    expect(created.plan.items).toEqual([]);
+  });
+
   test("a second runtime can list and resume the saved session", async () => {
     const home = await tempDirectory("nju-lifecycle-");
     const workspace = await tempDirectory("nju-lifecycle-work-");

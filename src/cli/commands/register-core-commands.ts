@@ -2,6 +2,7 @@ import type { SlashCommandRouter } from "../command-router.js";
 import { createCompactCommand } from "./compact-command.js";
 import { createContextCommand } from "./context-command.js";
 import { createExitCommand } from "./exit-command.js";
+import { createGoalCommand } from "./goal-command.js";
 import { createHelpCommand } from "./help-command.js";
 import { createHistoryCommand } from "./history-command.js";
 import { createNewCommand } from "./new-command.js";
@@ -24,6 +25,7 @@ export function registerCoreCommands(router: SlashCommandRouter): void {
   router.register(createContextCommand());
   router.register(createCompactCommand());
   router.register(createPlanCommand());
+  router.register(createGoalCommand());
   router.register(createSkillsCommand());
   router.register(createSkillCommand());
   router.register(createSetupCommand());
