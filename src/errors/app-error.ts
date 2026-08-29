@@ -10,6 +10,7 @@ export type AppErrorCode =
   | "CONTEXT_LIMIT"
   | "COMPACTION_FAILED"
   | "SKILL_INVALID"
+  | "PLAN_INVALID"
   | "USER_CANCELLED"
   | "INTERNAL";
 
