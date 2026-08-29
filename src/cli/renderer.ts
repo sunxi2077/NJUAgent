@@ -238,6 +238,8 @@ export class TerminalRenderer implements Renderer {
     if (this.#interactive) {
       const labels: Record<RunResult["status"], { symbol: string; label: string }> = {
         completed: { symbol: "✓", label: "Completed" },
+        goal_verified: { symbol: "✓", label: "Goal verified" },
+        goal_incomplete: { symbol: "◇", label: "Goal incomplete" },
         cancelled: { symbol: "–", label: "Cancelled" },
         limit_reached: { symbol: "!", label: "Step limit reached" },
         context_limit: { symbol: "!", label: "Context limit reached" },
@@ -265,7 +267,10 @@ export class TerminalRenderer implements Renderer {
   #statusColor(status: RunResult["status"]): (text: string) => string {
     switch (status) {
       case "completed":
+      case "goal_verified":
         return this.#theme.success;
+      case "goal_incomplete":
+        return this.#theme.warning;
       case "limit_reached":
       case "context_limit":
         return this.#theme.warning;

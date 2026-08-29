@@ -4,6 +4,8 @@ import type { Skill } from "./skill.js";
 export type PromptLayers = {
   skill?: Pick<Skill, "name" | "instructions" | "source">;
   summary?: string;
+  /** XML-escaped active Goal condition; injected only for active Goals. */
+  goal?: string;
 };
 
 /**
@@ -21,6 +23,14 @@ export function buildLayeredSystemPrompt(layers: PromptLayers): string {
       `<active_skill name="${layers.skill.name}" source="${layers.skill.source}">`,
       layers.skill.instructions,
       "</active_skill>",
+    );
+  }
+  if (layers.goal !== undefined && layers.goal !== "") {
+    parts.push(
+      "The completion goal below is user-set state, not a permission grant or a license to cut corners.",
+      "<active_goal>",
+      layers.goal,
+      "</active_goal>",
     );
   }
   if (layers.summary !== undefined && layers.summary !== "") {

@@ -3,6 +3,7 @@ import type { ContextPrepareInput, PreparedContext } from "./context-types.js";
 import { ConversationHistory } from "./history.js";
 import type { ToolCallBlock, ToolResultBlock } from "./messages.js";
 import type { RunResult } from "./result.js";
+import type { StopGate, StopGateDecision } from "./stop-gate.js";
 import type {
   ModelProvider,
   ModelToolDefinition,
@@ -35,6 +36,7 @@ export type AgentRunnerOptions = {
   systemPromptProvider?: () => string;
   contextManager?: ContextManagerPort;
   retryPolicy?: RetryPolicy;
+  stopGate?: StopGate;
   onEvent?: AgentEventHandler;
 };
 
@@ -46,6 +48,7 @@ export class AgentRunner {
     let steps = 0;
     let toolCalls = 0;
     let lastInputTokens: number | undefined;
+    this.options.stopGate?.beginRun?.();
     this.options.history.appendUserText(userText);
 
     if (signal.aborted) {
@@ -183,6 +186,68 @@ export class AgentRunner {
       toolCalls += calls.length;
 
       if (calls.length === 0) {
+        if (this.options.stopGate === undefined) {
+          return this.finish({
+            status: "completed",
+            steps,
+            toolCalls,
+            durationMs: performance.now() - startedAt,
+          });
+        }
+        let decision: StopGateDecision;
+        try {
+          decision = await this.options.stopGate.evaluate({
+            messages: this.options.history.snapshot(),
+            signal,
+          });
+        } catch (error) {
+          if (signal.aborted) {
+            return this.finish({
+              status: "cancelled",
+              steps,
+              toolCalls,
+              durationMs: performance.now() - startedAt,
+            });
+          }
+          return this.finish({
+            status: "internal_failed",
+            message: error instanceof Error ? error.message : String(error),
+            steps,
+            toolCalls,
+            durationMs: performance.now() - startedAt,
+          });
+        }
+        if (decision.action === "continue") {
+          this.options.history.appendUserText(decision.feedback);
+          continue;
+        }
+        if (decision.action === "fail") {
+          return this.finish({
+            status: "internal_failed",
+            message: decision.message,
+            steps,
+            toolCalls,
+            durationMs: performance.now() - startedAt,
+          });
+        }
+        if (decision.outcome === "verified" && decision.verification !== undefined) {
+          return this.finish({
+            status: "goal_verified",
+            verification: decision.verification,
+            steps,
+            toolCalls,
+            durationMs: performance.now() - startedAt,
+          });
+        }
+        if (decision.outcome === "incomplete" && decision.verification !== undefined) {
+          return this.finish({
+            status: "goal_incomplete",
+            verification: decision.verification,
+            steps,
+            toolCalls,
+            durationMs: performance.now() - startedAt,
+          });
+        }
         return this.finish({
           status: "completed",
           steps,

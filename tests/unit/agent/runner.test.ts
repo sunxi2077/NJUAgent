@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { AgentEvent } from "../../../src/agent/events.js";
 import { ConversationHistory } from "../../../src/agent/history.js";
 import { AgentRunner, type ContextManagerPort, type ToolExecutorPort } from "../../../src/agent/runner.js";
+import type { StopGate } from "../../../src/agent/stop-gate.js";
 import type {
   ModelProvider,
   ModelRequest,
@@ -468,5 +469,152 @@ describe("AgentRunner", () => {
     expect(result.status).toBe("completed");
     expect(attempts).toBe(3);
     expect(events.filter((event) => event.type === "retrying")).toHaveLength(2);
+  });
+
+  describe("stopGate", () => {
+    function runnerWithGate(gate: StopGate) {
+      const provider = new ScriptedProvider([
+        [
+          { type: "text_delta", text: "done" },
+          complete(textAssistant("done")),
+        ],
+        [
+          { type: "text_delta", text: "again" },
+          complete(textAssistant("again")),
+        ],
+      ]);
+      const history = new ConversationHistory();
+      const runner = new AgentRunner({
+        provider,
+        history,
+        tools: emptyTools,
+        maxSteps: 4,
+        systemPrompt: "Be precise.",
+        stopGate: gate,
+      });
+      return { provider, history, runner };
+    }
+
+    test("without a gate the completed status is unchanged", async () => {
+      const provider = new ScriptedProvider([
+        [complete(textAssistant("done"))],
+      ]);
+      const runner = new AgentRunner({
+        provider,
+        history: new ConversationHistory(),
+        tools: emptyTools,
+        maxSteps: 4,
+        systemPrompt: "p",
+      });
+      const result = await runner.run("task", new AbortController().signal);
+      expect(result.status).toBe("completed");
+    });
+
+    test("a plain stop keeps completed", async () => {
+      const gate: StopGate = {
+        async evaluate() {
+          return { action: "stop" };
+        },
+      };
+      const { runner } = runnerWithGate(gate);
+      const result = await runner.run("task", new AbortController().signal);
+      expect(result.status).toBe("completed");
+    });
+
+    test("continue appends feedback and returns to the same loop", async () => {
+      let calls = 0;
+      const gate: StopGate = {
+        beginRun() {
+          calls += 1;
+        },
+        async evaluate() {
+          if (calls === 1) {
+            calls += 1;
+            return { action: "continue", feedback: "<goal_evaluator_feedback>keep going</goal_evaluator_feedback>" };
+          }
+          return { action: "stop" };
+        },
+      };
+      const { runner, provider, history } = runnerWithGate(gate);
+      const result = await runner.run("task", new AbortController().signal);
+      expect(result.status).toBe("completed");
+      expect(provider.requests).toHaveLength(2);
+      const messages = history.snapshot();
+      expect(messages.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+      ]);
+      expect(JSON.stringify(messages[2])).toContain("goal_evaluator_feedback");
+    });
+
+    test("verified and incomplete outcomes map to the goal result statuses", async () => {
+      const verification = { satisfied: true, reason: "r", missingEvidence: [] };
+      const gate: StopGate = {
+        async evaluate() {
+          return { action: "stop", outcome: "verified" as const, verification };
+        },
+      };
+      const { runner } = runnerWithGate(gate);
+      const result = await runner.run("task", new AbortController().signal);
+      expect(result).toMatchObject({ status: "goal_verified", verification });
+    });
+
+    test("fail maps to internal_failed", async () => {
+      const gate: StopGate = {
+        async evaluate() {
+          return { action: "fail", message: "Goal evaluation failed; the goal remains active." };
+        },
+      };
+      const { runner } = runnerWithGate(gate);
+      const result = await runner.run("task", new AbortController().signal);
+      expect(result).toMatchObject({ status: "internal_failed" });
+    });
+
+    test("cancellation during evaluation maps to cancelled", async () => {
+      const controller = new AbortController();
+      const gate: StopGate = {
+        async evaluate() {
+          controller.abort();
+          return { action: "continue", feedback: "x" };
+        },
+      };
+      const provider = new ScriptedProvider([
+        [complete(textAssistant("done"))],
+      ]);
+      const runner = new AgentRunner({
+        provider,
+        history: new ConversationHistory(),
+        tools: emptyTools,
+        maxSteps: 4,
+        systemPrompt: "p",
+        stopGate: gate,
+      });
+      const result = await runner.run("task", controller.signal);
+      expect(result.status).toBe("cancelled");
+    });
+
+    test("maxSteps still bounds the loop when the gate keeps continuing", async () => {
+      const gate: StopGate = {
+        async evaluate() {
+          return { action: "continue", feedback: "keep going" };
+        },
+      };
+      const provider = new ScriptedProvider(
+        Array.from({ length: 8 }, () => [complete(textAssistant("again"))]),
+      );
+      const runner = new AgentRunner({
+        provider,
+        history: new ConversationHistory(),
+        tools: emptyTools,
+        maxSteps: 3,
+        systemPrompt: "p",
+        stopGate: gate,
+      });
+      const result = await runner.run("task", new AbortController().signal);
+      expect(result.status).toBe("limit_reached");
+      expect(provider.requests).toHaveLength(3);
+    });
   });
 });

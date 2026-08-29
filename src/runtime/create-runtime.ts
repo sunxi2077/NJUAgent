@@ -16,6 +16,8 @@ import { AnthropicProvider } from "../providers/anthropic-provider.js";
 import { PlanManager } from "../planning/plan-manager.js";
 import { createPlanWriteTool } from "../planning/plan-tool.js";
 import { EvidenceLedger } from "../goals/evidence-ledger.js";
+import { ModelGoalEvaluator } from "../goals/goal-evaluator.js";
+import { GoalController } from "../goals/goal-controller.js";
 import {
   BalancedPermissionPolicy,
   CautiousPermissionPolicy,
@@ -142,10 +144,24 @@ export async function createRuntime(
 
   const history = ConversationHistory.from(session.messages);
   let activeSkill: Skill | undefined;
+  const goalEvaluator = new ModelGoalEvaluator({ provider });
+  const goalController = new GoalController({
+    goal: () => session.goal,
+    plan: () => session.plan,
+    evidence: () => session.evidence,
+    evaluator: goalEvaluator,
+    maxAutomaticContinuations: 3,
+    onEvent: (event) => deps.renderer.handle(event),
+  });
+  const activeGoalCondition = () =>
+    session.goal !== null && session.goal.status === "active"
+      ? escapeXml(session.goal.condition)
+      : undefined;
   const systemPromptProvider = () =>
-    buildLayeredSystemPrompt(
-      activeSkill === undefined ? {} : { skill: activeSkill },
-    );
+    buildLayeredSystemPrompt({
+      ...(activeSkill === undefined ? {} : { skill: activeSkill }),
+      ...(activeGoalCondition() === undefined ? {} : { goal: activeGoalCondition()! }),
+    });
   const contextManager = new ContextManager({
     policy: new ContextPolicy({
       contextWindowTokens: deps.config.contextWindowTokens,
@@ -178,6 +194,7 @@ export async function createRuntime(
       maxDelayMs: 30_000,
       jitterRatio: 0.25,
     },
+    stopGate: goalController,
     onEvent: (event) => deps.renderer.handle(event),
   });
 
@@ -205,4 +222,13 @@ export async function createRuntime(
       activeSkill = skill;
     },
   };
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&apos;");
 }

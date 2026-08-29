@@ -109,7 +109,7 @@ const SESSION_SCHEMA = {
         turns: { type: "integer", minimum: 0 },
         toolCalls: { type: "integer", minimum: 0 },
         lastRunStatus: {
-          enum: ["completed", "limit_reached", "context_limit", "cancelled", "model_failed", "internal_failed"],
+          enum: ["completed", "goal_verified", "goal_incomplete", "limit_reached", "context_limit", "cancelled", "model_failed", "internal_failed"],
         },
       },
       required: ["turns", "toolCalls"],
