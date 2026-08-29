@@ -41,6 +41,14 @@ export function formatSessionStatus(
   },
 ): string {
   const { dirty, theme } = options;
+  const planProgress = session.plan.items.length === 0
+    ? "none"
+    : `${session.plan.items.filter((item) => item.status === "completed").length}/${session.plan.items.length}`;
+  const goalLine = session.goal === null
+    ? "none"
+    : session.goal.status === "verified"
+      ? "verified"
+      : "active";
   const webSearch = options.webSearchAvailable === true
     ? "available"
     : "unavailable (set TAVILY_API_KEY)";
@@ -49,6 +57,8 @@ export function formatSessionStatus(
     `Workspace: ${truncateText(session.workspaceRoot, WORKSPACE_LIMIT)}`,
     `Permission: ${session.permissionMode}`,
     `Skill: ${session.activeSkill ?? "none"}`,
+    `Plan: ${planProgress}`,
+    `Goal: ${goalLine}`,
     `Web search: ${webSearch}`,
     `Messages: ${session.messages.length}`,
     `Dirty: ${dirty ? "yes" : "no"}`,
