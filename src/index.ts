@@ -224,6 +224,7 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     sessionManager,
     store: sessionStore,
     skillRegistry,
+    webSearchAvailable: activeConfig.tavilyApiKey !== undefined,
     runSetup: async () => {
       const saved = await runSetup({
         prompt,

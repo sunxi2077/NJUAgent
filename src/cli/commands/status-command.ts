@@ -11,6 +11,7 @@ export function createStatusCommand(): SlashCommand {
         formatSessionStatus(context.sessionManager.active(), {
           dirty: context.sessionManager.isDirty(),
           theme: context.theme,
+          webSearchAvailable: context.webSearchAvailable,
         }),
       );
       return { kind: "continue", stateChanged: false };

@@ -31,6 +31,7 @@ function makeContext(overrides: {
     renderer,
     theme: createTheme({ enabled: false }),
     signal: new AbortController().signal,
+    webSearchAvailable: false,
     skillRegistry: {
       refresh: async () => ({ skills: [], diagnostics: [] }),
       list: () => [],

@@ -242,7 +242,8 @@ describe("session lifecycle", () => {
         sessionManager: manager,
         store,
         signal: new AbortController().signal,
-    skillRegistry: {
+        webSearchAvailable: false,
+        skillRegistry: {
       refresh: async () => ({ skills: [], diagnostics: [] }),
       list: () => [],
       resolve: () => undefined,

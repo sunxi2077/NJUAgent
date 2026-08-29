@@ -325,7 +325,8 @@ describe("CliSession with command router", () => {
       clearPlan: async () => ({ items: [] }),
         },
         store: { list: async () => ({ sessions: [], diagnostics: [] }) },
-        skillRegistry: {
+        webSearchAvailable: false,
+    skillRegistry: {
           refresh: async () => ({ skills: [], diagnostics: [] }),
           list: () => [],
           resolve: () => undefined,
@@ -374,6 +375,7 @@ describe("CliSession with command router", () => {
       clearPlan: async () => ({ items: [] }),
         },
         store: { list: async () => ({ sessions: [], diagnostics: [] }) },
+        webSearchAvailable: false,
         skillRegistry: {
           refresh: async () => ({ skills: [], diagnostics: [] }),
           list: () => [],

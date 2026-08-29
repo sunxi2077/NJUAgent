@@ -22,6 +22,7 @@ function context(runSetup: () => Promise<boolean>): CommandContext {
     theme: createTheme({ enabled: false }),
     signal: new AbortController().signal,
     runSetup,
+    webSearchAvailable: false,
     sessionManager: {} as CommandContext["sessionManager"],
     store: {} as CommandContext["store"],
     skillRegistry: {} as CommandContext["skillRegistry"],

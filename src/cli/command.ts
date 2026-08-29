@@ -41,6 +41,8 @@ export type CommandContext = {
   >;
   store: Pick<SessionStore, "list">;
   skillRegistry: Pick<SkillRegistry, "refresh" | "list" | "resolve" | "diagnostics">;
+  /** Whether the web_search tool is registered (derived from config, never the key). */
+  webSearchAvailable: boolean;
   runSetup?: () => Promise<boolean>;
   signal: AbortSignal;
 };

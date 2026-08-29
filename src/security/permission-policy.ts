@@ -21,6 +21,9 @@ const readOnlyTools = new Set(["read_file", "list_files", "search_text"]);
 const writeTools = new Set(["write_file", "edit_file"]);
 // Session-metadata tools change no workspace state and never need approval.
 const metadataTools = new Set(["plan_write"]);
+// External-network tools always need approval because the query leaves the machine.
+const externalTools = new Set(["web_search"]);
+const WEB_SEARCH_REASON = "Web search sends the query to an external service";
 
 function commandText(request: ToolExecutionRequest): string | undefined {
   if (request.name !== "run_command" || typeof request.input !== "object" || request.input === null) {
@@ -91,6 +94,9 @@ export class BalancedPermissionPolicy implements PermissionPolicy {
     if (readOnlyTools.has(request.name) || writeTools.has(request.name) || metadataTools.has(request.name)) {
       return { action: "allow" };
     }
+    if (externalTools.has(request.name)) {
+      return { action: "ask", reason: WEB_SEARCH_REASON };
+    }
     const command = commandText(request);
     if (command !== undefined) {
       return classifyCommand(command);
@@ -103,6 +109,9 @@ export class CautiousPermissionPolicy implements PermissionPolicy {
   decide(request: ToolExecutionRequest): PermissionDecision {
     if (readOnlyTools.has(request.name) || metadataTools.has(request.name)) {
       return { action: "allow" };
+    }
+    if (externalTools.has(request.name)) {
+      return { action: "ask", reason: WEB_SEARCH_REASON };
     }
     const command = commandText(request);
     if (command !== undefined) {

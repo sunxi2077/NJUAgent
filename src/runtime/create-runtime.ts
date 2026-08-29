@@ -34,6 +34,9 @@ import {
   createListFilesTool,
   createSearchTextTool,
 } from "../tools/search-tools.js";
+import { TavilySearchProvider } from "../web/tavily-search-provider.js";
+import type { WebSearchProvider } from "../web/web-search.js";
+import { createWebSearchTool } from "../web/web-search-tool.js";
 
 export type CreateRuntimeDeps = {
   env: NodeJS.ProcessEnv;
@@ -42,6 +45,8 @@ export type CreateRuntimeDeps = {
   renderer: Renderer;
   /** Test seam: inject a scripted provider instead of the real SDK client. */
   provider?: ModelProvider;
+  /** Test seam: inject a fake search provider instead of the real Tavily client. */
+  webSearchProvider?: WebSearchProvider;
 };
 
 /**
@@ -94,6 +99,22 @@ export async function createRuntime(
       deps.renderer.handle({ type: "plan_updated", plan }),
   });
   registry.register(createPlanWriteTool({ manager: planManager }));
+
+  const webSearchAvailable = deps.config.tavilyApiKey !== undefined;
+  if (webSearchAvailable && deps.config.tavilyApiKey !== undefined) {
+    const searchProvider = deps.webSearchProvider ??
+      new TavilySearchProvider({
+        apiKey: deps.config.tavilyApiKey,
+        timeoutMs: deps.config.webSearchTimeoutMs,
+      });
+    registry.register(
+      createWebSearchTool({
+        provider: searchProvider,
+        maxContentChars: deps.config.webSearchMaxContentChars,
+        maxOutputBytes: deps.config.toolOutputMaxBytes,
+      }),
+    );
+  }
 
   const permissionPolicy = session.permissionMode === "cautious"
     ? new CautiousPermissionPolicy()

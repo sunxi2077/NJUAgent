@@ -34,14 +34,22 @@ export function formatSessionList(options: {
 
 export function formatSessionStatus(
   session: PersistedSessionV1,
-  options: { dirty: boolean; theme: TerminalTheme },
+  options: {
+    dirty: boolean;
+    theme: TerminalTheme;
+    webSearchAvailable?: boolean;
+  },
 ): string {
   const { dirty, theme } = options;
+  const webSearch = options.webSearchAvailable === true
+    ? "available"
+    : "unavailable (set TAVILY_API_KEY)";
   return [
     `Model: ${session.modelId}`,
     `Workspace: ${truncateText(session.workspaceRoot, WORKSPACE_LIMIT)}`,
     `Permission: ${session.permissionMode}`,
     `Skill: ${session.activeSkill ?? "none"}`,
+    `Web search: ${webSearch}`,
     `Messages: ${session.messages.length}`,
     `Dirty: ${dirty ? "yes" : "no"}`,
     theme.muted(`/help for commands`),
