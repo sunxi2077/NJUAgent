@@ -163,4 +163,84 @@ describe("ToolExecutor", () => {
     expect(result).toMatchObject({ code: "cancelled", isError: true });
     expect(executions).toBe(0);
   });
+
+  describe("onResult observer", () => {
+    function observedExecutor(options?: { policy?: PermissionPolicy; confirm?: () => Promise<boolean> }) {
+      const registry = new ToolRegistry();
+      registry.register(createEchoTool());
+      const observed: Array<{ name: string; isError: boolean; code?: string }> = [];
+      const observerErrors: unknown[] = [];
+      const executor = new ToolExecutor({
+        registry,
+        permissionPolicy: options?.policy ?? new AllowAllPermissionPolicy(),
+        confirm: async () => options?.confirm?.() ?? false,
+        onResult: (call, result) => {
+          observed.push({
+            name: call.name,
+            isError: result.isError,
+            ...(result.code === undefined ? {} : { code: result.code }),
+          });
+        },
+        onObserverError: (error) => {
+          observerErrors.push(error);
+        },
+      });
+      return { executor, observed, observerErrors };
+    }
+
+    test("observes success exactly once", async () => {
+      const { executor, observed } = observedExecutor();
+      await executor.execute(
+        { id: "c1", name: "echo", input: { value: "hi" } },
+        new AbortController().signal,
+      );
+      expect(observed).toEqual([{ name: "echo", isError: false }]);
+    });
+
+    test("observes unknown-tool, invalid-input, and denial paths exactly once", async () => {
+      const { executor, observed } = observedExecutor({
+        policy: { decide: () => ({ action: "deny" as const, reason: "no" }) },
+      });
+      await executor.execute(
+        { id: "c1", name: "nope", input: {} },
+        new AbortController().signal,
+      );
+      await executor.execute(
+        { id: "c2", name: "echo", input: { value: 42 } },
+        new AbortController().signal,
+      );
+      await executor.execute(
+        { id: "c3", name: "echo", input: { value: "x" } },
+        new AbortController().signal,
+      );
+      expect(observed).toEqual([
+        { name: "nope", isError: true, code: "unknown_tool" },
+        { name: "echo", isError: true, code: "invalid_input" },
+        { name: "echo", isError: true, code: "permission_denied" },
+      ]);
+    });
+
+    test("a throwing observer never alters the tool result", async () => {
+      const registry = new ToolRegistry();
+      registry.register(createEchoTool());
+      const observerErrors: unknown[] = [];
+      const executor = new ToolExecutor({
+        registry,
+        permissionPolicy: new AllowAllPermissionPolicy(),
+        confirm: async () => false,
+        onResult: () => {
+          throw new Error("observer exploded");
+        },
+        onObserverError: (error) => {
+          observerErrors.push(error);
+        },
+      });
+      const result = await executor.execute(
+        { id: "c1", name: "echo", input: { value: "hi" } },
+        new AbortController().signal,
+      );
+      expect(result).toMatchObject({ toolCallId: "c1", isError: false });
+      expect(observerErrors).toHaveLength(1);
+    });
+  });
 });

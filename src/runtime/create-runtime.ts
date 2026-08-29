@@ -15,6 +15,7 @@ import type { ModelProvider } from "../providers/provider.js";
 import { AnthropicProvider } from "../providers/anthropic-provider.js";
 import { PlanManager } from "../planning/plan-manager.js";
 import { createPlanWriteTool } from "../planning/plan-tool.js";
+import { EvidenceLedger } from "../goals/evidence-ledger.js";
 import {
   BalancedPermissionPolicy,
   CautiousPermissionPolicy,
@@ -119,12 +120,16 @@ export async function createRuntime(
   const permissionPolicy = session.permissionMode === "cautious"
     ? new CautiousPermissionPolicy()
     : new BalancedPermissionPolicy();
+  const evidenceLedger = new EvidenceLedger({ state: session.evidence });
   const executor = new ToolExecutor({
     registry,
     permissionPolicy,
     confirm: (call, reason) =>
       deps.prompt.confirm(formatPermissionQuestion(call, reason)),
     onOutput: (call, stream, text) => deps.renderer.toolOutput(call, stream, text),
+    onResult: (call, result) => evidenceLedger.observe(call, result),
+    onObserverError: (error) =>
+      deps.renderer.error(error instanceof Error ? error.message : String(error)),
   });
 
   const provider = deps.provider ??
