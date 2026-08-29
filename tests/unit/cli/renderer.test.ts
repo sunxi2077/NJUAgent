@@ -4,6 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { AgentEvent } from "../../../src/agent/events.js";
 import type { RunResult } from "../../../src/agent/result.js";
 import { summarizeToolInput, TerminalRenderer } from "../../../src/cli/renderer.js";
+import { terminalWidth } from "../../../src/cli/terminal-text.js";
 import type { ToolExecutionRequest } from "../../../src/tools/tool.js";
 
 class MemoryStdout {
@@ -542,16 +543,26 @@ describe("TerminalRenderer permission prompts", () => {
   };
   const reason = "Web search sends the query to an external service";
 
-  test("TTY permissionRequest renders a warning card with tool, action, and reason", () => {
+  test("TTY permissionRequest renders a closed warning box with title, tool, action, and reason", () => {
     const stdout = new MemoryStdout();
     const renderer = ttyRenderer(stdout);
     renderer.permissionRequest(webCall, reason);
     const visible = stripVTControlCharacters(stdout.text());
-    expect(visible).toContain("╭─ ⚠ Permission required");
+    expect(visible).toContain("╭");
+    expect(visible).toContain("╮");
+    expect(visible).toContain("╰");
+    expect(visible).toContain("╯");
+    expect(visible).toContain("⚠ Permission required");
     expect(visible).toContain("│ Tool    web_search");
     expect(visible).toContain("│ Action  AbortSignal timeout");
     expect(visible).toContain("│ Reason  Web search sends the query to an external service");
-    expect(visible).toContain("╰─");
+    // Every framed row (borders included) has the same visible width.
+    const lines = visible.split("\n");
+    const frame = lines.filter((line) => /^[╭│╰]/u.test(line));
+    expect(frame.length).toBeGreaterThan(2);
+    for (const line of frame) {
+      expect(terminalWidth(line), line).toBe(terminalWidth(frame[0]!));
+    }
     expect(stdout.text()).toContain("\x1b[33m");
     expect(stdout.text()).toContain("\x1b[38;5;141m");
   });
@@ -586,7 +597,7 @@ describe("TerminalRenderer permission prompts", () => {
     // Single line, no embedded newline, bounded length with an ellipsis.
     expect(actionLine!.split("\n")).toHaveLength(1);
     expect(actionLine!.length).toBeLessThan(160);
-    expect(actionLine!).toMatch(/…$/u);
+    expect(actionLine!).toMatch(/…\s*│$/u);
     expect(actionLine!).not.toContain("x".repeat(300));
   });
 

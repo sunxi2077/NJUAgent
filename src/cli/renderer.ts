@@ -1,5 +1,6 @@
 import { createTheme, type TerminalTheme } from "./theme.js";
 import { StreamingMarkdownRenderer } from "./streaming-markdown.js";
+import { terminalWidth } from "./terminal-text.js";
 import type { PlanState } from "../planning/plan.js";
 import type { GoalEvaluationDecision } from "../goals/goal.js";
 
@@ -311,12 +312,27 @@ export class TerminalRenderer implements Renderer {
         this.#transient = "";
       }
       const label = (text: string): string => text.padEnd(PERMISSION_LABEL_WIDTH);
+      const rows = [
+        this.#theme.warning("⚠ Permission required"),
+        `${label("Tool")}${this.#theme.brandStrong(call.name)}`,
+        `${label("Action")}${this.#theme.brandStrong(summarizeToolInput(call))}`,
+        `${label("Reason")}${oneLineBounded(reason)}`,
+      ];
+      // All rows share one width: pad every body to the widest visible row so
+      // the box closes cleanly even with CJK or ANSI content.
+      const contentWidth = Math.max(...rows.map((row) => terminalWidth(row)));
+      const padTo = (row: string): string => {
+        const visible = terminalWidth(row);
+        return visible >= contentWidth
+          ? row
+          : `${row}${" ".repeat(contentWidth - visible)}`;
+      };
+      const border = this.#theme.warning(`╭${"─".repeat(contentWidth + 2)}╮`);
+      const bottom = this.#theme.warning(`╰${"─".repeat(contentWidth + 2)}╯`);
       const card = [
-        this.#theme.warning("╭─ ⚠ Permission required"),
-        `│ ${label("Tool")}${this.#theme.brandStrong(call.name)}`,
-        `│ ${label("Action")}${this.#theme.brandStrong(summarizeToolInput(call))}`,
-        `│ ${label("Reason")}${oneLineBounded(reason)}`,
-        this.#theme.warning("╰─"),
+        border,
+        ...rows.map((row) => `│ ${padTo(row)} │`),
+        bottom,
       ];
       this.#stdout.write(`${card.join("\n")}\n`);
     } finally {
