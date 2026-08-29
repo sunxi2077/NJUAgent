@@ -5,6 +5,8 @@ import { assertValidHistory, type Message } from "../agent/messages.js";
 import type { PermissionMode } from "../config.js";
 import { AppError } from "../errors/app-error.js";
 import type { RunResult } from "../agent/result.js";
+import { createEmptyEvidenceState, type EvidenceState, type GoalState } from "../goals/goal.js";
+import { validatePlanItems, type PlanState } from "../planning/plan.js";
 
 export type PersistedSessionV1 = {
   schemaVersion: 1;
@@ -23,6 +25,9 @@ export type PersistedSessionV1 = {
     toolCalls: number;
     lastRunStatus?: RunResult["status"];
   };
+  plan: PlanState;
+  goal: GoalState | null;
+  evidence: EvidenceState;
 };
 
 export type CreateEmptySessionInput = {
@@ -47,6 +52,9 @@ export function createEmptySession(input: CreateEmptySessionInput): PersistedSes
     messages: [],
     context: { compactionCount: 0 },
     stats: { turns: 0, toolCalls: 0 },
+    plan: { items: [] },
+    goal: null,
+    evidence: createEmptyEvidenceState(),
   };
 }
 
@@ -107,6 +115,93 @@ const SESSION_SCHEMA = {
       required: ["turns", "toolCalls"],
       additionalProperties: false,
     },
+    plan: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          maxItems: 12,
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", pattern: "^[a-z0-9][a-z0-9_-]{0,31}$" },
+              content: { type: "string", minLength: 1, maxLength: 200 },
+              status: { enum: ["pending", "in_progress", "completed"] },
+            },
+            required: ["id", "content", "status"],
+            additionalProperties: false,
+          },
+        },
+        updatedAt: { type: "string", minLength: 1 },
+      },
+      required: ["items"],
+      additionalProperties: false,
+    },
+    goal: {
+      type: ["object", "null"],
+      properties: {
+        condition: { type: "string", minLength: 1, maxLength: 1000 },
+        status: { enum: ["active", "verified", "cancelled"] },
+        createdAt: { type: "string", minLength: 1 },
+        updatedAt: { type: "string", minLength: 1 },
+        automaticContinuations: { type: "integer", minimum: 0 },
+        lastDecision: {
+          type: "object",
+          properties: {
+            satisfied: { type: "boolean" },
+            reason: { type: "string", minLength: 1, maxLength: 500 },
+            missingEvidence: {
+              type: "array",
+              maxItems: 8,
+              items: { type: "string", minLength: 1, maxLength: 300 },
+            },
+            evaluatedAt: { type: "string", minLength: 1 },
+          },
+          required: ["satisfied", "reason", "missingEvidence", "evaluatedAt"],
+          additionalProperties: false,
+        },
+      },
+      required: ["condition", "status", "createdAt", "updatedAt", "automaticContinuations"],
+      additionalProperties: false,
+    },
+    evidence: {
+      type: "object",
+      properties: {
+        workspaceRevision: { type: "integer", minimum: 0 },
+        changedPaths: {
+          type: "array",
+          items: { type: "string" },
+        },
+        commands: {
+          type: "array",
+          maxItems: 20,
+          items: {
+            type: "object",
+            properties: {
+              command: { type: "string", minLength: 1 },
+              exitCode: { type: ["integer", "null"] },
+              timedOut: { type: "boolean" },
+              cancelled: { type: "boolean" },
+              isVerification: { type: "boolean" },
+              workspaceRevision: { type: "integer", minimum: 0 },
+              observedAt: { type: "string", minLength: 1 },
+            },
+            required: [
+              "command",
+              "exitCode",
+              "timedOut",
+              "cancelled",
+              "isVerification",
+              "workspaceRevision",
+              "observedAt",
+            ],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["workspaceRevision", "changedPaths", "commands"],
+      additionalProperties: false,
+    },
   },
   required: [
     "schemaVersion",
@@ -121,6 +216,9 @@ const SESSION_SCHEMA = {
     "messages",
     "context",
     "stats",
+    "plan",
+    "goal",
+    "evidence",
   ],
   additionalProperties: false,
 } as const;
@@ -130,15 +228,33 @@ function isIsoDate(value: string): boolean {
 }
 
 /**
+ * Builds a non-mutating candidate that supplies deterministic defaults for the
+ * Stage Four fields, so pre-Stage-Four documents load before strict validation.
+ */
+function normalizeSessionCandidate(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    ...record,
+    plan: record.plan ?? { items: [] },
+    goal: record.goal ?? null,
+    evidence: record.evidence ?? createEmptyEvidenceState(),
+  };
+}
+
+/**
  * Validates JSON structure with Ajv (rejecting unknown properties), then
- * checks message-history invariants, checkpoint coverage, and date formats.
- * Returns a defensive clone. Failures are `SESSION_CORRUPT` and never echo the
- * whole session document.
+ * checks message-history invariants, checkpoint coverage, date formats, and
+ * the Stage Four cross-field Plan rule. Returns a defensive clone. Failures
+ * are `SESSION_CORRUPT` and never echo the whole session document.
  */
 export function parseSession(value: unknown): PersistedSessionV1 {
+  const candidate = normalizeSessionCandidate(value);
   const ajv = new Ajv({ allErrors: true });
   const validate = ajv.compile(SESSION_SCHEMA as AnySchema);
-  if (!validate(value)) {
+  if (!validate(candidate)) {
     const detail = ajv.errorsText(validate.errors, { separator: "; " });
     throw new AppError({
       code: "SESSION_CORRUPT",
@@ -146,7 +262,7 @@ export function parseSession(value: unknown): PersistedSessionV1 {
     });
   }
 
-  const session = value as PersistedSessionV1;
+  const session = candidate as PersistedSessionV1;
   const diagnostics: string[] = [];
   if (!isIsoDate(session.createdAt)) {
     diagnostics.push("createdAt is not a valid date");
@@ -163,6 +279,31 @@ export function parseSession(value: unknown): PersistedSessionV1 {
   if (session.context.checkpoint !== undefined &&
     session.context.checkpoint.coveredMessageCount > session.messages.length) {
     diagnostics.push("checkpoint covers more messages than exist");
+  }
+  if (session.plan.updatedAt !== undefined && !isIsoDate(session.plan.updatedAt)) {
+    diagnostics.push("plan.updatedAt is not a valid date");
+  }
+  if (session.goal !== null) {
+    if (!isIsoDate(session.goal.createdAt)) {
+      diagnostics.push("goal.createdAt is not a valid date");
+    }
+    if (!isIsoDate(session.goal.updatedAt)) {
+      diagnostics.push("goal.updatedAt is not a valid date");
+    }
+    if (session.goal.lastDecision !== undefined &&
+      !isIsoDate(session.goal.lastDecision.evaluatedAt)) {
+      diagnostics.push("goal.lastDecision.evaluatedAt is not a valid date");
+    }
+  }
+  for (const command of session.evidence.commands) {
+    if (!isIsoDate(command.observedAt)) {
+      diagnostics.push("evidence command observedAt is not a valid date");
+      break;
+    }
+  }
+  const planCheck = validatePlanItems(session.plan.items);
+  if (!planCheck.ok) {
+    diagnostics.push(planCheck.message);
   }
   if (diagnostics.length > 0) {
     throw new AppError({
