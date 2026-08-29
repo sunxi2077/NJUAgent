@@ -26,6 +26,13 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt();
     expect(prompt).toMatch(/workspace/u);
   });
+
+  test("instructs the model to plan complex work and mark steps honestly", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/plan_write/u);
+    expect(prompt).toMatch(/in_progress/u);
+    expect(prompt).toMatch(/never mark an unfinished step as completed/u);
+  });
 });
 
 describe("buildSystemPrompt summary layer", () => {

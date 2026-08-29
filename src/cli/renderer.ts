@@ -1,5 +1,6 @@
 import { createTheme, type TerminalTheme } from "./theme.js";
 import { StreamingMarkdownRenderer } from "./streaming-markdown.js";
+import type { PlanState } from "../planning/plan.js";
 
 import type { AgentEvent } from "../agent/events.js";
 import type { RunResult } from "../agent/result.js";
@@ -175,6 +176,9 @@ export class TerminalRenderer implements Renderer {
           );
         }
         break;
+      case "plan_updated":
+        this.#renderPlan(event.plan);
+        break;
       case "run_finished":
         this.#flushModelText();
         this.#flushPlainModelText();
@@ -271,6 +275,49 @@ export class TerminalRenderer implements Renderer {
       case "internal_failed":
         return this.#theme.error;
     }
+  }
+
+  /**
+   * Renders a Plan snapshot update: a compact progress panel in TTY mode and
+   * stable `[plan]` records in non-TTY mode.
+   */
+  #renderPlan(plan: PlanState): void {
+    if (plan.items.length === 0) {
+      if (this.#interactive) {
+        this.#permanent(this.#theme.brandStrong("◆ Plan cleared"));
+      } else {
+        this.#write("[plan] cleared\n");
+      }
+      return;
+    }
+    const completed = plan.items.filter((item) => item.status === "completed").length;
+    if (this.#interactive) {
+      const idWidth = Math.max(...plan.items.map((item) => [...item.id].length));
+      const lines: string[] = [
+        this.#theme.brandStrong(`◆ Plan ${completed}/${plan.items.length}`),
+      ];
+      for (const item of plan.items) {
+        const symbol = item.status === "completed"
+          ? "✓"
+          : item.status === "in_progress"
+            ? "◐"
+            : "○";
+        const id = item.status === "completed"
+          ? this.#theme.success(`${symbol} ${item.id}`)
+          : item.status === "in_progress"
+            ? this.#theme.warning(`${symbol} ${item.id}`)
+            : `${symbol} ${item.id}`;
+        const padding = " ".repeat(Math.max(1, idWidth - [...item.id].length + 4));
+        lines.push(`  ${id}${padding}${item.content}`);
+      }
+      this.#permanent(lines.join("\n"));
+      return;
+    }
+    const lines = [`[plan] ${completed}/${plan.items.length}`];
+    for (const item of plan.items) {
+      lines.push(`[plan] ${item.status} ${item.id}: ${item.content}`);
+    }
+    this.#write(`${lines.join("\n")}\n`);
   }
 
   /**

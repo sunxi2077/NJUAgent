@@ -15,6 +15,7 @@ describe("BalancedPermissionPolicy", () => {
   test.each([
     ["read_file", { path: "src/index.ts" }],
     ["write_file", { path: "src/index.ts", content: "x" }],
+    ["plan_write", { items: [{ id: "a", content: "b", status: "pending" }] }],
     ["run_command", { command: "npm test" }],
     ["run_command", { command: "npm run build" }],
     ["run_command", { command: "git diff --stat" }],
@@ -74,6 +75,16 @@ describe("CautiousPermissionPolicy", () => {
       expect(policy.decide({ id: "call", name, input: {} })).toMatchObject({ action: "ask" });
     },
   );
+
+  test("allows plan_write without confirmation in cautious mode", () => {
+    expect(
+      policy.decide({
+        id: "call",
+        name: "plan_write",
+        input: { items: [{ id: "a", content: "b", status: "pending" }] },
+      }),
+    ).toEqual({ action: "allow" });
+  });
 
   test("denies privilege escalation instead of merely asking", () => {
     expect(policy.decide(command("sudo npm test"))).toMatchObject({ action: "deny" });

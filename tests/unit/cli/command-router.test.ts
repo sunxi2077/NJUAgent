@@ -51,6 +51,8 @@ function context(): CommandContext {
       activeSkill: () => undefined,
       activateSkill: async () => { throw new Error("unused"); },
       deactivateSkill: async () => undefined,
+      plan: () => ({ items: [] }),
+      clearPlan: async () => ({ items: [] }),
     },
     store: {
       list: async () => ({ sessions: [], diagnostics: [] }),
@@ -128,5 +130,30 @@ describe("SlashCommandRouter", () => {
     router.register(fakeCommand("exit", async () => ({ kind: "exit" as const })));
     const result = await router.route("/exit", context());
     expect(result).toEqual({ kind: "exit" });
+  });
+
+  test("/plan is a local command that never reaches the model", async () => {
+    const router = new SlashCommandRouter();
+    let shown: unknown;
+    let cleared = false;
+    router.register({
+      name: "plan",
+      usage: "/plan [clear]",
+      description: "Show the execution plan",
+      async execute(args, ctx) {
+        if (args.trim() === "clear") {
+          cleared = true;
+          await ctx.sessionManager.clearPlan();
+          return { kind: "continue" as const, stateChanged: true };
+        }
+        shown = ctx.sessionManager.plan();
+        return { kind: "continue" as const, stateChanged: false };
+      },
+    });
+    const ctx = context();
+    const result = await router.route("/plan", ctx);
+    expect(result).toEqual({ kind: "handled", stateChanged: false });
+    expect(shown).toEqual({ items: [] });
+    expect(cleared).toBe(false);
   });
 });

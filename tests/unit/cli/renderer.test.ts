@@ -418,4 +418,62 @@ describe("TerminalRenderer assistant anchors", () => {
     renderer.handle({ type: "model_completed", stopReason: "end_turn" });
     expect(stripVTControlCharacters(stdout.text())).not.toContain("done\n\n\n");
   });
+
+  test("renders plan_updated as a compact TTY panel with progress", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "plan_updated",
+      plan: {
+        items: [
+          { id: "inspect", content: "Read implementation and tests", status: "completed" },
+          { id: "fix", content: "Implement validation", status: "in_progress" },
+          { id: "test", content: "Run focused tests", status: "pending" },
+          { id: "verify", content: "Run full verification", status: "pending" },
+        ],
+      },
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("◆ Plan 1/4");
+    expect(visible).toContain("✓ inspect    Read implementation and tests");
+    expect(visible).toContain("◐ fix        Implement validation");
+    expect(visible).toContain("○ test       Run focused tests");
+    expect(visible).toContain("○ verify     Run full verification");
+    expect(stdout.text()).toContain("\x1b[38;5;141m");
+    expect(stdout.text()).toContain("\x1b[32m");
+    expect(stdout.text()).toContain("\x1b[33m");
+  });
+
+  test("renders an empty plan update as cleared in TTY", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "plan_updated", plan: { items: [] } });
+    expect(stripVTControlCharacters(stdout.text())).toContain("◆ Plan cleared");
+  });
+
+  test("renders plan_updated as [plan] records in non-TTY", () => {
+    const stdout = new MemoryStdout();
+    const renderer = plainRenderer(stdout);
+    renderer.handle({
+      type: "plan_updated",
+      plan: {
+        items: [
+          { id: "inspect", content: "Read implementation", status: "completed" },
+          { id: "fix", content: "Implement validation", status: "in_progress" },
+        ],
+      },
+    });
+    const text = stdout.text();
+    expect(text).toContain("[plan] 1/2\n");
+    expect(text).toContain("[plan] completed inspect: Read implementation\n");
+    expect(text).toContain("[plan] in_progress fix: Implement validation\n");
+    expect(text).not.toContain("\x1b[");
+  });
+
+  test("renders an empty plan update as cleared in non-TTY", () => {
+    const stdout = new MemoryStdout();
+    const renderer = plainRenderer(stdout);
+    renderer.handle({ type: "plan_updated", plan: { items: [] } });
+    expect(stdout.text()).toContain("[plan] cleared\n");
+  });
 });

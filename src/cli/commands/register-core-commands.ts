@@ -5,6 +5,7 @@ import { createExitCommand } from "./exit-command.js";
 import { createHelpCommand } from "./help-command.js";
 import { createHistoryCommand } from "./history-command.js";
 import { createNewCommand } from "./new-command.js";
+import { createPlanCommand } from "./plan-command.js";
 import { createResumeCommand } from "./resume-command.js";
 import { createSkillCommand } from "./skill-command.js";
 import { createSkillsCommand } from "./skills-command.js";
@@ -22,6 +23,7 @@ export function registerCoreCommands(router: SlashCommandRouter): void {
   router.register(createHistoryCommand());
   router.register(createContextCommand());
   router.register(createCompactCommand());
+  router.register(createPlanCommand());
   router.register(createSkillsCommand());
   router.register(createSkillCommand());
   router.register(createSetupCommand());

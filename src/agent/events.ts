@@ -1,4 +1,5 @@
 import type { RunResult } from "./result.js";
+import type { PlanState } from "../planning/plan.js";
 
 export type AgentEvent =
   | { type: "model_started"; step: number }
@@ -14,6 +15,7 @@ export type AgentEvent =
       ok: boolean;
       durationMs: number;
     }
+  | { type: "plan_updated"; plan: PlanState }
   | { type: "context_compaction_started" }
   | { type: "context_compaction_completed"; summaryLength: number }
   | { type: "context_warning"; message: string }

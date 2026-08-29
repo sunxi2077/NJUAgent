@@ -5,6 +5,8 @@ import type { Skill } from "../skills/skill.js";
 import type { SkillRegistry } from "../skills/skill-registry.js";
 import { AppError } from "../errors/app-error.js";
 import type { PermissionMode } from "../config.js";
+import type { PlanManager } from "../planning/plan-manager.js";
+import type { PlanState } from "../planning/plan.js";
 import type { SessionStore } from "./session-store.js";
 import {
   createEmptySession,
@@ -15,6 +17,7 @@ import {
 export type ActiveRuntime = {
   session: PersistedSessionV1;
   history: ConversationHistory;
+  planManager: PlanManager;
   run(text: string, signal: AbortSignal): Promise<RunResult>;
   contextState(): ContextState;
   contextStatus(): ContextStatus;
@@ -106,6 +109,17 @@ export class SessionManager {
 
   contextStatus(): ContextStatus {
     return this.#activeRuntime.contextStatus();
+  }
+
+  plan(): PlanState {
+    return this.#activeRuntime.planManager.snapshot();
+  }
+
+  async clearPlan(): Promise<PlanState> {
+    const plan = this.#activeRuntime.planManager.clear();
+    this.#dirty = true;
+    await this.flush();
+    return plan;
   }
 
   activeSkill(): Skill | undefined {

@@ -13,6 +13,8 @@ import type { Renderer } from "../cli/renderer.js";
 import type { AppConfig } from "../config.js";
 import type { ModelProvider } from "../providers/provider.js";
 import { AnthropicProvider } from "../providers/anthropic-provider.js";
+import { PlanManager } from "../planning/plan-manager.js";
+import { createPlanWriteTool } from "../planning/plan-tool.js";
 import {
   BalancedPermissionPolicy,
   CautiousPermissionPolicy,
@@ -86,6 +88,13 @@ export async function createRuntime(
     }),
   );
 
+  const planManager = new PlanManager({
+    state: session.plan,
+    onChanged: (plan) =>
+      deps.renderer.handle({ type: "plan_updated", plan }),
+  });
+  registry.register(createPlanWriteTool({ manager: planManager }));
+
   const permissionPolicy = session.permissionMode === "cautious"
     ? new CautiousPermissionPolicy()
     : new BalancedPermissionPolicy();
@@ -149,6 +158,7 @@ export async function createRuntime(
   return {
     session,
     history,
+    planManager,
     run: (text, signal) => runner.run(text, signal),
     contextState: () => contextManager.state(),
     contextStatus: (): ContextStatus =>

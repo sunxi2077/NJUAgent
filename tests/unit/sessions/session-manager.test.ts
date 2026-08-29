@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { ConversationHistory } from "../../../src/agent/history.js";
 import type { RunResult } from "../../../src/agent/result.js";
 import { AppError } from "../../../src/errors/app-error.js";
+import { PlanManager } from "../../../src/planning/plan-manager.js";
 import { SkillRegistry } from "../../../src/skills/skill-registry.js";
 import type { Skill } from "../../../src/skills/skill.js";
 import { SessionManager, type ActiveRuntime } from "../../../src/sessions/session-manager.js";
@@ -83,6 +84,7 @@ class FakeStore {
 class FakeRuntime implements ActiveRuntime {
   session: PersistedSessionV1;
   readonly history: ConversationHistory;
+  readonly planManager: PlanManager;
   disposed = false;
   runCalls = 0;
   activeSkill: Skill | undefined;
@@ -91,6 +93,7 @@ class FakeRuntime implements ActiveRuntime {
   constructor(session: PersistedSessionV1) {
     this.session = structuredClone(session);
     this.history = ConversationHistory.from(session.messages);
+    this.planManager = new PlanManager({ state: this.session.plan });
   }
 
   async run(text: string): Promise<RunResult> {
@@ -225,6 +228,47 @@ describe("SessionManager", () => {
     store.failEverySave = false;
     await manager.flush();
     expect(manager.isDirty()).toBe(false);
+  });
+
+  test("plan returns the current snapshot and clearPlan persists emptiness", async () => {
+    const { manager, store, initialRuntime } = setup();
+    initialRuntime.planManager.replace([
+      { id: "read", content: "read code", status: "completed" },
+      { id: "fix", content: "implement", status: "in_progress" },
+    ]);
+    expect(manager.plan().items).toHaveLength(2);
+
+    const cleared = await manager.clearPlan();
+    expect(cleared.items).toEqual([]);
+    expect(manager.plan().items).toEqual([]);
+    const saved = store.files.get(ID)!;
+    expect(saved.plan.items).toEqual([]);
+    expect(saved.plan.updatedAt).toBeDefined();
+  });
+
+  test("a tool-updated plan survives a checkpoint and resume", async () => {
+    const { manager, store, initialRuntime } = setup();
+    initialRuntime.planManager.replace([
+      { id: "step", content: "do the work", status: "in_progress" },
+    ]);
+    await manager.runTurn("task", new AbortController().signal);
+    expect(store.files.get(ID)?.plan.items).toEqual([
+      { id: "step", content: "do the work", status: "in_progress" },
+    ]);
+
+    await manager.resume(ID);
+    expect(manager.plan().items).toEqual([
+      { id: "step", content: "do the work", status: "in_progress" },
+    ]);
+  });
+
+  test("createNew starts with an empty plan", async () => {
+    const { manager, initialRuntime } = setup();
+    initialRuntime.planManager.replace([
+      { id: "step", content: "work", status: "pending" },
+    ]);
+    await manager.createNew();
+    expect(manager.plan().items).toEqual([]);
   });
 
   test("createNew refuses to switch when flush fails", async () => {

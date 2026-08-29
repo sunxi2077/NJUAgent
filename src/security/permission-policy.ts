@@ -19,6 +19,8 @@ export class AllowAllPermissionPolicy implements PermissionPolicy {
 
 const readOnlyTools = new Set(["read_file", "list_files", "search_text"]);
 const writeTools = new Set(["write_file", "edit_file"]);
+// Session-metadata tools change no workspace state and never need approval.
+const metadataTools = new Set(["plan_write"]);
 
 function commandText(request: ToolExecutionRequest): string | undefined {
   if (request.name !== "run_command" || typeof request.input !== "object" || request.input === null) {
@@ -86,7 +88,7 @@ function classifyCommand(command: string): PermissionDecision {
 
 export class BalancedPermissionPolicy implements PermissionPolicy {
   decide(request: ToolExecutionRequest): PermissionDecision {
-    if (readOnlyTools.has(request.name) || writeTools.has(request.name)) {
+    if (readOnlyTools.has(request.name) || writeTools.has(request.name) || metadataTools.has(request.name)) {
       return { action: "allow" };
     }
     const command = commandText(request);
@@ -99,7 +101,7 @@ export class BalancedPermissionPolicy implements PermissionPolicy {
 
 export class CautiousPermissionPolicy implements PermissionPolicy {
   decide(request: ToolExecutionRequest): PermissionDecision {
-    if (readOnlyTools.has(request.name)) {
+    if (readOnlyTools.has(request.name) || metadataTools.has(request.name)) {
       return { action: "allow" };
     }
     const command = commandText(request);

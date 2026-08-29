@@ -24,6 +24,12 @@ export function buildSystemPrompt(options: { summary?: string } = {}): string {
     "Boundaries:",
     "- Only access files inside the workspace. The host enforces this; never try to bypass it.",
     "- Never include credentials or secrets in file contents or replies.",
+    "",
+    "Planning:",
+    "- For a simple, single-step task, do not create a plan.",
+    "- When a task requires reading multiple files, modifying, verifying, or external research, create a plan first with plan_write.",
+    "- Before starting a plan step, mark it in_progress; mark it completed as soon as it is actually done.",
+    "- Rewriting the plan is allowed when the work changes; never mark an unfinished step as completed.",
   ].join("\n");
   if (options.summary === undefined || options.summary === "") {
     return base;

@@ -84,6 +84,8 @@ function makeContext(overrides: {
           throw overrides.deactivateError;
         }
       },
+      plan: () => ({ items: [] }),
+      clearPlan: async () => ({ items: [] }),
     },
     store: {
       list: async () => ({ sessions: [], diagnostics: [] }),
