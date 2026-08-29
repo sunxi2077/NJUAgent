@@ -476,4 +476,60 @@ describe("TerminalRenderer assistant anchors", () => {
     renderer.handle({ type: "plan_updated", plan: { items: [] } });
     expect(stdout.text()).toContain("[plan] cleared\n");
   });
+
+  test("renders goal evaluation events in TTY", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({ type: "goal_evaluation_started", attempt: 1 });
+    renderer.handle({
+      type: "goal_evaluation_completed",
+      decision: {
+        satisfied: false,
+        reason: "no verification",
+        missingEvidence: [
+          "npm run typecheck has not run after the latest edit",
+          "second missing item",
+          "third missing item",
+          "fourth missing item",
+        ],
+      },
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("◇ Checking goal evidence…");
+    expect(visible).toContain("◇ Goal incomplete");
+    expect(visible).toContain("Missing: npm run typecheck has not run after the latest edit");
+    expect(visible).toContain("… and 1 more");
+    expect(stdout.text()).toContain("\x1b[33m");
+  });
+
+  test("renders a verified goal verdict in TTY with success color", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "goal_evaluation_completed",
+      decision: { satisfied: true, reason: "npm test passed after the latest edit", missingEvidence: [] },
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("✓ Goal verified");
+    expect(visible).toContain("npm test passed after the latest edit");
+    expect(stdout.text()).toContain("\x1b[32m");
+  });
+
+  test("renders goal evaluation events as [goal] records in non-TTY", () => {
+    const stdout = new MemoryStdout();
+    const renderer = plainRenderer(stdout);
+    renderer.handle({ type: "goal_evaluation_started", attempt: 2 });
+    renderer.handle({
+      type: "goal_evaluation_completed",
+      decision: {
+        satisfied: false,
+        reason: "no verification",
+        missingEvidence: ["npm run typecheck has not run"],
+      },
+    });
+    const text = stdout.text();
+    expect(text).toContain("[goal] evaluating attempt=2\n");
+    expect(text).toContain('[goal] incomplete missing="npm run typecheck has not run"\n');
+    expect(text).not.toContain("\x1b[");
+  });
 });

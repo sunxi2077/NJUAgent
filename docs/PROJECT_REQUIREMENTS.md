@@ -347,3 +347,33 @@ CLI
 - [x] 项目 Skill 路径统一为 `<workspace>/.nju-agent/skills/`。
 - [x] 欢迎页按终端宽度排版并使用南大紫层级；工具记录隐藏内部 ID 和原始 JSON。
 - [x] readline 缓存连续粘贴的输入行，不再静默丢弃后续命令。
+
+## 12. 第三阶段（Stage Three）CLI UI 打磨清单
+
+> 依据 `docs/superpowers/plans/2026-08-29-stage-three-cli-ui-polish.md` 逐项核对。
+
+- [x] 语义主题（brandStrong 141 / brandBorder 99 / userLabel 45）与单一启用决策（TTY && !NO_COLOR && TERM != dumb）。
+- [x] 响应式欢迎卡：>=64 列完整 NJU Logo；36-63 紧凑边框；<36 或禁用时纯文本；Unicode 宽度截断。
+- [x] readline 输入锚点 `❯ You`（cyan 45），中文/光标/Backspace/粘贴不回归。
+- [x] 流式 Markdown 子集（heading/bold/italic/list/quote/inline code/fenced code/link）与分块不变量。
+- [x] `◆ NJUAgent` 助手分段与工具行之间可见区分；无样式泄漏到运行摘要。
+- [x] 全量回归 405 测试、真实 TTY 验收（80/60/40 列）、范围外功能未引入。
+
+## 13. 第四阶段（Stage Four）可靠目标、计划与联网搜索清单
+
+> 依据 `docs/superpowers/specs/2026-08-29-stage-four-reliable-agent-design.md` 与
+> `docs/superpowers/plans/2026-08-29-stage-four-reliable-agent-implementation.md`。
+> 范围：联网搜索、Plan 计划、显式 Goal 模式。非目标：长期记忆、Repo Map、Session Fork、
+> 子 Agent、MCP、web_fetch、后台任务、自动 Git 回滚、自动为普通消息创建 Goal。
+> 仅在最终套件全部通过后勾选。
+
+- [x] 持久化 Plan/Goal/Evidence 状态（schemaVersion 1 兼容旧文档规范化）。
+- [x] PlanManager 原子替换与 `plan_write` 模型工具。
+- [x] `/plan` 命令、`plan_updated` 事件与 CLI 渲染。
+- [x] Tavily Provider（注入 fetch、Bearer 协议、超时/取消组合、错误分类不泄露密钥）。
+- [x] 权限门控 `web_search` 工具（域名校验、输出预算、`<untrusted_web_results>`）。
+- [x] 确定性 Evidence Ledger 与验证命令分类（fresh verification 语义）。
+- [x] `/goal` 会话控制（创建/查看/清除，替换重置计数）。
+- [x] 无工具 GoalEvaluator 与宿主 GoalPolicy（未完成计划/陈旧验证强制 incomplete）。
+- [x] StopGate + GoalController（最多 3 次自动继续；goal_verified / goal_incomplete / fail 映射）。
+- [x] 普通模式零回归（无 Goal 时无评估请求；非 TTY 无 ANSI；无密钥泄漏）。

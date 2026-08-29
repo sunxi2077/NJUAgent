@@ -1,6 +1,7 @@
 import { createTheme, type TerminalTheme } from "./theme.js";
 import { StreamingMarkdownRenderer } from "./streaming-markdown.js";
 import type { PlanState } from "../planning/plan.js";
+import type { GoalEvaluationDecision } from "../goals/goal.js";
 
 import type { AgentEvent } from "../agent/events.js";
 import type { RunResult } from "../agent/result.js";
@@ -179,6 +180,16 @@ export class TerminalRenderer implements Renderer {
       case "plan_updated":
         this.#renderPlan(event.plan);
         break;
+      case "goal_evaluation_started":
+        if (this.#interactive) {
+          this.#permanent(this.#theme.brandStrong("◇ Checking goal evidence…"));
+        } else {
+          this.#write(`[goal] evaluating attempt=${event.attempt}\n`);
+        }
+        break;
+      case "goal_evaluation_completed":
+        this.#renderGoalEvaluation(event.decision);
+        break;
       case "run_finished":
         this.#flushModelText();
         this.#flushPlainModelText();
@@ -323,6 +334,41 @@ export class TerminalRenderer implements Renderer {
       lines.push(`[plan] ${item.status} ${item.id}: ${item.content}`);
     }
     this.#write(`${lines.join("\n")}\n`);
+  }
+
+  /**
+   * Renders a Goal evaluation verdict: a compact verdict panel in TTY mode and
+   * stable `[goal]` records in non-TTY mode. Missing evidence stays bounded.
+   */
+  #renderGoalEvaluation(decision: GoalEvaluationDecision): void {
+    if (this.#interactive) {
+      const lines = decision.satisfied
+        ? [this.#theme.success("✓ Goal verified")]
+        : [this.#theme.warning("◇ Goal incomplete")];
+      if (decision.satisfied && decision.reason !== "") {
+        lines.push(`  ${decision.reason}`);
+      }
+      if (!decision.satisfied) {
+        for (const item of decision.missingEvidence.slice(0, 3)) {
+          lines.push(`  Missing: ${item}`);
+        }
+        const extra = decision.missingEvidence.length - 3;
+        if (extra > 0) {
+          lines.push(`  … and ${extra} more`);
+        }
+      }
+      this.#permanent(lines.join("\n"));
+      return;
+    }
+    if (decision.satisfied) {
+      this.#write("[goal] verified\n");
+      return;
+    }
+    const missing = decision.missingEvidence
+      .slice(0, 3)
+      .map((item) => `"${item}"`)
+      .join(", ");
+    this.#write(`[goal] incomplete missing=${missing}\n`);
   }
 
   /**

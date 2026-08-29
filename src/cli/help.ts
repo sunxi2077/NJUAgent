@@ -16,6 +16,9 @@ Environment:
   MODEL_ID                     model name supported by the endpoint
   NJU_AGENT_HOME               application home (default ~/.nju-agent)
   NO_COLOR                     disable colors and cursor control when set
+  TAVILY_API_KEY               optional; enables the permission-gated web_search tool
+  WEB_SEARCH_TIMEOUT_MS        web search timeout in ms (default 15000)
+  WEB_SEARCH_MAX_CONTENT_CHARS per-result content cap (default 6000)
 
 Interactive commands:
   /help                        Show available commands
@@ -24,6 +27,8 @@ Interactive commands:
   /resume <id>                 Resume a saved session
   /new                         Start a new session
   /history [1-100]             Show recent messages
+  /plan [clear]                Show or clear the model-maintained plan
+  /goal [clear|<condition>]    Set, show, or clear the explicit completion goal
   /exit                        Save the current session and exit
 
 Any input starting with / is handled locally; use // to send literal text.

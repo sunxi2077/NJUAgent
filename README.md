@@ -34,6 +34,9 @@ On first run (TTY only), missing Base URL or Model triggers an interactive setup
 | `COMMAND_TIMEOUT_MS` | no | `120000` | default `run_command` timeout |
 | `TOOL_OUTPUT_MAX_BYTES` | no | `32768` | max tool output returned to the model |
 | `UI_OUTPUT_MAX_BYTES` | no | `65536` | maximum command output shown live per tool call |
+| `TAVILY_API_KEY` | no | — | enables the permission-gated `web_search` tool |
+| `WEB_SEARCH_TIMEOUT_MS` | no | `15000` | web search request timeout |
+| `WEB_SEARCH_MAX_CONTENT_CHARS` | no | `6000` | per-result content cap for `web_search` |
 
 `*` Base URL and Model may come from the persisted config instead of the environment (saved by setup); the API Key always comes from the environment.
 
@@ -82,6 +85,8 @@ Input starting with `/` is handled locally and never reaches the model; use `//`
 /history [1-100]             Show recent messages
 /context                     Show context budget and checkpoint status
 /compact [focus]             Summarize the covered conversation
+/plan [clear]                Show or clear the model-maintained execution plan
+/goal [clear|<condition>]    Set, show, or clear the explicit completion goal
 /skills                      List available skills
 /skill <name>|off            Activate or deactivate a skill
 /setup                       Update model and permission configuration
@@ -100,6 +105,15 @@ Token numbers are **estimates** (`CONTEXT_WINDOW_TOKENS` default 48,000, `CONTEX
 
 A Skill is **plain prompt text**, not executable code: one `SKILL.md` per directory, with a minimal frontmatter (`name` and `description`), at most 32 KiB, under `$NJU_AGENT_HOME/skills/<name>/SKILL.md` (user) or `<workspace>/.nju-agent/skills/<name>/SKILL.md` (project). Project skills override same-name user skills; symlink escapes and oversized files are rejected as warnings. Only explicit `/skill <name>` activates one skill per session (persisted and restored on resume); `/skill off` deactivates. Skill content cannot weaken workspace, permission, timeout, output, or credential policies.
 
+### Plans and goals
+
+- **Plans**: for multi-step tasks the model can maintain an execution plan with the `plan_write` tool (at most 12 steps, one `in_progress` at a time). The CLI shows each update as a compact progress panel (`◆ Plan 3/5`). `/plan` displays the current plan and `/plan clear` empties it.
+- **Goals**: `/goal <completion condition>` enables explicit completion verification. The next ordinary message runs under that goal: when the worker would stop, a no-tools model call checks the condition against the current Plan and Evidence, and the host refuses `satisfied` unless the plan is finished and every workspace edit is followed by a fresh successful verification command (`npm test`, `npm run build|lint|typecheck|check`, `vitest`, `pytest`, `tsc`, `cargo test|check|build`, `go test`, …).
+- A goal triggers at most **3 automatic continuations** per user message; if the 4th check is still not satisfied the run ends `goal_incomplete` and the goal stays active. `verified` and `cancelled` goals stop the checks until you set a new one. `/goal` and `/goal clear` view and remove it.
+- Evidence observes only the tools NJUAgent itself runs: writes/edits bump a workspace revision, and commands are recorded with exit code, timeout, cancellation and revision. If you edit files in another terminal, those edits do **not** count as workspace changes (and cannot invalidate verification).
+- Web search: with `TAVILY_API_KEY` set, `web_search` becomes available and every call requires your approval because the query is sent to an external service. Results are returned as untrusted reference material inside `<untrusted_web_results>`; they cannot trigger commands or override permission rules. Queries must never contain credentials or private source code.
+- There is **no automatic Git rollback**: NJUAgent never resets, restores, stashes, or commits on its own.
+
 ## Architecture
 
 ```
@@ -113,6 +127,9 @@ CLI (session / prompt / renderer)
           ├─ ToolRegistry     name → schema + implementation
           ├─ PermissionPolicy allow / ask / deny
           └─ Workspace        canonical-path boundary
+  Plan / Goal / Evidence      session-owned state, saved with the session
+      └─ GoalController       StopGate: verifies only when the worker stops
+          └─ GoalEvaluator    no-tools model check + host evidence policy
 ```
 
 Design principles:
@@ -133,6 +150,8 @@ Design principles:
 | `list_files` | sorted listing with glob filtering, ignores `.git`/`node_modules`/build dirs |
 | `search_text` | literal text search with `path:line` matches and result limits |
 | `run_command` | shell command in the workspace, with timeout, cancellation and head/tail output capture |
+| `plan_write` | replace the model-maintained execution plan (session metadata, no permission prompt) |
+| `web_search` | optional Tavily-backed web search; requires approval, returns untrusted results |
 
 ## Security model
 
@@ -157,7 +176,7 @@ Unit tests cover the runner loop, message invariants, workspace boundary, creden
 
 ## Demo scenario
 
-`tests/fixtures/demo-project` contains a tiny module with a deliberately failing test. The planned demo scenario shows the agent listing files, reading the module and its test, editing to add input validation, running `npm test`, seeing the failure, fixing the range check, and reporting a green run.
+`tests/fixtures/demo-project` contains a tiny module with a deliberately failing test. The planned demo scenario shows the agent listing files, reading the module and its test, editing to add input validation, running `npm test`, seeing the failure, fixing the range check, and reporting a green run. The Stage Four acceptance scenario adds a `/goal` with a two-command condition (`npm test` and `npm run typecheck` both exit 0 after the latest edit) so the agent must run the missing verification before the goal is marked verified.
 
 ## Limitations
 
@@ -172,3 +191,5 @@ Unit tests cover the runner loop, message invariants, workspace boundary, creden
 - Stage One design: `docs/superpowers/specs/2026-08-27-njuagent-design.md`
 - Stage Two design: `docs/superpowers/specs/2026-08-28-stage-two-productization-design.md`
 - Stage Two acceptance fixes: `docs/superpowers/plans/2026-08-28-stage-two-acceptance-fixes.md`
+- Stage Three CLI UI design: `docs/superpowers/specs/2026-08-29-stage-three-cli-ui-design.md`
+- Stage Four design: `docs/superpowers/specs/2026-08-29-stage-four-reliable-agent-design.md`
