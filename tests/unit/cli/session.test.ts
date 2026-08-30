@@ -11,6 +11,7 @@ class FakePrompt implements Prompt {
   readonly #pendingReads: Array<(value: string | null) => void> = [];
   readonly #queuedInputs: Array<string | null> = [];
   readonly promptTexts: string[] = [];
+  readonly readOptions: unknown[] = [];
   readCount = 0;
   confirmQuestions: string[] = [];
   confirmResult = true;
@@ -18,8 +19,9 @@ class FakePrompt implements Prompt {
   interrupted = false;
   closed = false;
 
-  read(promptText: string): Promise<string | null> {
+  read(promptText: string, options?: unknown): Promise<string | null> {
     this.promptTexts.push(promptText);
+    this.readOptions.push(options);
     this.readCount += 1;
     const queued = this.#queuedInputs.shift();
     if (queued !== undefined) {
@@ -396,5 +398,78 @@ describe("CliSession with command router", () => {
     await session.start();
 
     expect(turns).toEqual(["/help"]);
+  });
+
+  test("every main read receives the latest router descriptors", async () => {
+    const prompt = new FakePrompt();
+    const renderer = new MemoryRenderer();
+    const router = new SlashCommandRouter();
+    router.register({
+      name: "status",
+      usage: "/status",
+      description: "show status",
+      execute: async () => ({ kind: "continue" as const, stateChanged: false }),
+    });
+    prompt.pushInput("/status");
+    prompt.pushInput(null);
+    const session = new CliSession({
+      prompt,
+      renderer,
+      runTurn: async () => ({ status: "completed", steps: 1, toolCalls: 0, durationMs: 1 }),
+      router,
+      commandContext: {
+        renderer,
+        theme: createTheme({ enabled: false }),
+        signal: new AbortController().signal,
+        sessionManager: {
+          active: () => { throw new Error("unused"); },
+          isDirty: () => false,
+          flush: async () => undefined,
+          createNew: async () => { throw new Error("unused"); },
+          resume: async () => { throw new Error("unused"); },
+          contextStatus: () => { throw new Error("unused"); },
+          compact: async () => { throw new Error("unused"); },
+          activeSkill: () => undefined,
+          activateSkill: async () => { throw new Error("unused"); },
+          deactivateSkill: async () => undefined,
+          plan: () => ({ items: [] }),
+          clearPlan: async () => ({ items: [] }),
+          goal: () => null,
+          setGoal: async () => { throw new Error("unused"); },
+          clearGoal: async () => undefined,
+        },
+        store: { list: async () => ({ sessions: [], diagnostics: [] }) },
+        webSearchAvailable: false,
+        skillRegistry: {
+          refresh: async () => ({ skills: [], diagnostics: [] }),
+          list: () => [],
+          resolve: () => undefined,
+          diagnostics: () => [],
+        },
+      },
+    });
+
+    await session.start();
+
+    expect(prompt.readOptions).toEqual([
+      { slashCommands: [{ name: "status", usage: "/status", description: "show status" }] },
+      { slashCommands: [{ name: "status", usage: "/status", description: "show status" }] },
+    ]);
+  });
+
+  test("without a router the main read options are undefined", async () => {
+    const prompt = new FakePrompt();
+    const renderer = new MemoryRenderer();
+    prompt.pushInput("hello");
+    prompt.pushInput("/exit");
+    const session = new CliSession({
+      prompt,
+      renderer,
+      runTurn: async () => ({ status: "completed", steps: 1, toolCalls: 0, durationMs: 1 }),
+    });
+
+    await session.start();
+
+    expect(prompt.readOptions).toEqual([undefined, undefined]);
   });
 });

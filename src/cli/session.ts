@@ -50,7 +50,10 @@ export class CliSession {
       if (this.#exitRequested) {
         break;
       }
-      const text = await this.#prompt.read(this.#inputPrompt);
+      const readOptions = this.#router === undefined
+        ? undefined
+        : { slashCommands: this.#router.descriptors() };
+      const text = await this.#prompt.read(this.#inputPrompt, readOptions);
       if (text === null || this.#exitRequested) {
         break;
       }

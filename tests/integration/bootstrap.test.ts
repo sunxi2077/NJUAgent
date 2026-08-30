@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 
-import type { Prompt } from "../../src/cli/prompt.js";
+import type { Prompt, ReadlinePromptOptions } from "../../src/cli/prompt.js";
+import { TerminalRenderer, type TerminalRendererOptions } from "../../src/cli/renderer.js";
 import { main, type BootstrapDeps } from "../../src/index.js";
 
 const temporaryDirectories: string[] = [];
@@ -222,5 +223,39 @@ describe("bootstrap", () => {
     await main(deps);
 
     expect(stdout.text()).not.toContain("\x1b[2J");
+  });
+
+  test.each([
+    ["interactive TTY", { isTTY: true, env: { ANTHROPIC_API_KEY: "key", ANTHROPIC_BASE_URL: "https://api.example.com/anthropic", MODEL_ID: "deepseek-v4-flash" } }, true ],
+    ["NO_COLOR", { isTTY: true, env: { ANTHROPIC_API_KEY: "key", ANTHROPIC_BASE_URL: "https://api.example.com/anthropic", MODEL_ID: "deepseek-v4-flash", NO_COLOR: "1" } }, false ],
+    ["TERM=dumb", { isTTY: true, env: { ANTHROPIC_API_KEY: "key", ANTHROPIC_BASE_URL: "https://api.example.com/anthropic", MODEL_ID: "deepseek-v4-flash", TERM: "dumb" } }, false ],
+    ["non-TTY", { isTTY: false, env: { ANTHROPIC_API_KEY: "key", ANTHROPIC_BASE_URL: "https://api.example.com/anthropic", MODEL_ID: "deepseek-v4-flash" } }, false ],
+  ] as const)("bootstraps one %s mode shared by prompt and renderer", async (_label, opts, enhanced) => {
+    const promptOptions: ReadlinePromptOptions[] = [];
+    const rendererOptions: TerminalRendererOptions[] = [];
+    const prompt = new FakePrompt();
+    const { deps, stdout } = await makeDeps({
+      isTTY: opts.isTTY,
+      env: opts.env,
+      promptFactory: (options) => {
+        promptOptions.push(options);
+        return prompt;
+      },
+      rendererFactory: (options) => {
+        rendererOptions.push(options);
+        return new TerminalRenderer(options);
+      },
+    });
+    prompt.reads = [null];
+    await main(deps);
+
+    expect(promptOptions).toHaveLength(1);
+    expect(rendererOptions).toHaveLength(1);
+    expect(promptOptions[0]!.enhanced).toBe(enhanced);
+    expect(promptOptions[0]!.theme?.enabled).toBe(enhanced);
+    expect(rendererOptions[0]!.theme).toBe(promptOptions[0]!.theme);
+    expect(promptOptions[0]!.theme?.enabled).toBe(promptOptions[0]!.enhanced);
+    // Columns come from stdout; MemoryWriter has none, so it must stay unset.
+    expect(promptOptions[0]!.columns).toBeUndefined();
   });
 });

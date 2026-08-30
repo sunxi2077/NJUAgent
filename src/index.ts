@@ -90,10 +90,18 @@ export async function main(deps: BootstrapDeps): Promise<number> {
   const missingNonSecret = persisted === undefined &&
     ((env.ANTHROPIC_BASE_URL?.trim() ?? "") === "" ||
       (env.MODEL_ID?.trim() ?? "") === "");
+  // One enhanced-mode decision shared by the prompt, renderer, welcome, and
+  // command context; prompt and renderer must never infer different modes.
+  const interactive = shouldEnableTerminalTheme({ isTTY, env });
+  const theme = createTheme({ enabled: interactive });
+  const stdoutColumns = (stdout as NodeJS.WritableStream & { columns?: number }).columns;
   const prompt = promptFactory({
     input: stdin,
     output: stdout,
     terminal: isTTY,
+    enhanced: interactive,
+    theme,
+    ...(stdoutColumns === undefined ? {} : { columns: stdoutColumns }),
   });
   try {
   if (isTTY && missingNonSecret) {
@@ -148,6 +156,7 @@ export async function main(deps: BootstrapDeps): Promise<number> {
   const renderer = rendererFactory({
     stdout,
     isTTY,
+    theme,
     maxLiveOutputBytes: config.uiOutputMaxBytes,
     inputSurface: prompt,
   });
@@ -181,11 +190,9 @@ export async function main(deps: BootstrapDeps): Promise<number> {
   // TTY without NO_COLOR/dumb TERM; never emit the control sequence in non-TTY,
   // piped, or color-disabled output. `2J` clears the visible area without
   // wiping the terminal scrollback.
-  const interactive = shouldEnableTerminalTheme({ isTTY, env });
   if (interactive) {
     stdout.write("\x1b[2J\x1b[H");
   }
-  const theme = createTheme({ enabled: interactive });
   const recent = existingSessions[0];
   stdout.write(
     `${formatWelcome(
