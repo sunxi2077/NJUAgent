@@ -37,6 +37,15 @@ export function terminalWidth(text: string): number {
 }
 
 /**
+ * Removes ANSI control sequences and collapses all whitespace runs (including
+ * CR/LF and tabs) into single spaces, trimmed. Safe for rendering untrusted
+ * descriptor text: no control sequence can leak through.
+ */
+export function sanitizeTerminalText(text: string): string {
+  return stripVTControlCharacters(text).replace(/\s+/gu, " ").trim();
+}
+
+/**
  * Truncates `text` so its terminal width fits within `maxWidth`, reserving one
  * cell for the trailing `…` when truncation is needed. Inputs are unstyled
  * values; ANSI inside the input is not preserved while slicing.
