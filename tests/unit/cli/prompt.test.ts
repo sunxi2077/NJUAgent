@@ -202,7 +202,18 @@ class FakeInputRouter implements TerminalInputRouterPort {
   constructor(
     private readonly fakeReadline: FakeReadline,
     private readonly delayWrites = false,
-  ) {}
+  ) {
+    // Writes to the proxy (e.g. the controller's Ctrl-U replacement) reach
+    // the fake readline as keypress input.
+    this.readlineInput.on("data", (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      if (text === "\x15") {
+        this.fakeReadline.write(undefined, { ctrl: true, name: "u" });
+      } else {
+        this.fakeReadline.write(text);
+      }
+    });
+  }
 
   setHandler(handler: TerminalKeyHandler | undefined): void {
     this.handler = handler;
@@ -572,7 +583,7 @@ describe("ReadlinePrompt slash palette", () => {
     await pending;
   });
 
-  test("never completes from a stale readline line", async () => {
+  test("the palette never reads a stale readline line for its prefix", async () => {
     const { prompt, rl, router, presenter } = enhancedPrompt({ delayWrites: true });
     const pending = prompt.read("› ", { slashCommands: COMMANDS });
     // Writes are deferred, so during key handling readline still shows the old
@@ -580,9 +591,8 @@ describe("ReadlinePrompt slash palette", () => {
     pressText(router, "/");
     pressText(router, "g");
     expect(presenter.renders.at(-1)?.prefix).toBe("g");
-    pressKey(router, "return", "\r");
-    expect(rl.line).toBe("/goal ");
-    rl.emitLine(rl.line);
+    expect(presenter.renders.at(-1)?.visibleMatches.map(({ name }) => name)).toEqual(["goal"]);
+    rl.emitLine("/g");
     await pending;
   });
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import type { Interface } from "node:readline";
-import { PassThrough } from "node:stream";
+import { PassThrough, Writable } from "node:stream";
 
 import { SlashCommandRouter } from "../../src/cli/command-router.js";
 import { ReadlinePrompt } from "../../src/cli/prompt.js";
@@ -84,7 +84,16 @@ class FakeInputRouter implements TerminalInputRouterPort {
   handler: TerminalKeyHandler | undefined;
   closed = false;
 
-  constructor(private readonly fakeReadline: FakeReadline) {}
+  constructor(private readonly fakeReadline: FakeReadline) {
+    this.readlineInput.on("data", (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      if (text === "\x15") {
+        this.fakeReadline.write(undefined, { ctrl: true, name: "u" });
+      } else {
+        this.fakeReadline.write(text);
+      }
+    });
+  }
 
   setHandler(handler: TerminalKeyHandler | undefined): void {
     this.handler = handler;
@@ -155,6 +164,11 @@ const COMMANDS = [
   descriptor("goal", "Set the completion goal"),
   descriptor("status"),
 ] as const;
+
+const FOURTEEN_COMMANDS = [
+  "help", "status", "sessions", "resume", "new", "history", "context",
+  "compact", "plan", "goal", "skills", "skill", "setup", "exit",
+].map((name) => descriptor(name));
 
 function makeHarness(options?: { presenter?: SlashMenuPresenterPort }) {
   const router = new SlashCommandRouter();
@@ -394,3 +408,149 @@ function contextOf(_router: SlashCommandRouter): CommandContext {
     webSearchAvailable: false,
   } as unknown as CommandContext;
 }
+
+describe("slash palette real streams", () => {
+  class TtyInput extends PassThrough {
+    readonly rawModeCalls: boolean[] = [];
+
+    get isTTY(): boolean {
+      return true;
+    }
+
+    setRawMode(value: boolean): this {
+      this.rawModeCalls.push(value);
+      return this;
+    }
+  }
+
+  class TtyOutput extends Writable {
+    columns = 80;
+    readonly chunks: string[] = [];
+
+    get isTTY(): boolean {
+      return true;
+    }
+
+    override _write(
+      chunk: Buffer | string,
+      _encoding: BufferEncoding,
+      callback: (error?: Error | null) => void,
+    ): void {
+      this.chunks.push(chunk.toString());
+      callback();
+    }
+  }
+
+  async function waitFor(predicate: () => boolean, message: string): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (predicate()) {
+        return;
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    throw new Error(message);
+  }
+
+  function makeRealPrompt(presenter: RecordingPresenter, commands: readonly SlashCommandDescriptor[]) {
+    const input = new TtyInput();
+    const output = new TtyOutput();
+    const prompt = new ReadlinePrompt({
+      input,
+      output,
+      terminal: true,
+      enhanced: true,
+      theme: createTheme({ enabled: false }),
+      menuPresenterFactory: () => presenter,
+    });
+    return { input, output, prompt };
+  }
+
+  test("real readline: / then g filters to goal and Enter completes goal, not help", async () => {
+    const presenter = new RecordingPresenter();
+    const { input, output, prompt } = makeRealPrompt(presenter, COMMANDS);
+    const pending = prompt.read("\u203a ", { slashCommands: COMMANDS });
+
+    input.write("/");
+    await waitFor(() => presenter.lastSnapshot?.prefix === "", "palette open");
+    expect(presenter.lastSnapshot?.visibleMatches.map(({ name }) => name)).toEqual([
+      "help",
+      "goal",
+      "status",
+    ]);
+
+    input.write("g");
+    await waitFor(() => presenter.lastSnapshot?.prefix === "g", "prefix g");
+    expect(presenter.lastSnapshot?.visibleMatches.map(({ name }) => name)).toEqual(["goal"]);
+
+    // Enter completes to "/goal " without submitting.
+    input.write("\r");
+    await waitFor(() => presenter.events.at(-1) === "clear", "complete on first Enter");
+    // Second Enter submits the completed line.
+    input.write("\r");
+    const text = await pending;
+    expect(text).toBe("/goal ");
+
+    prompt.close();
+    expect(input.rawModeCalls.at(-1)).toBe(false);
+  });
+
+  test("real readline: all fourteen commands are reachable and wrap around", async () => {
+    const presenter = new RecordingPresenter();
+    const { input, prompt } = makeRealPrompt(presenter, FOURTEEN_COMMANDS);
+    const pending = prompt.read("\u203a ", { slashCommands: FOURTEEN_COMMANDS });
+
+    input.write("/");
+    await waitFor(() => presenter.lastSnapshot?.active === true, "palette open");
+    for (let index = 0; index < 13; index += 1) {
+      input.write("\x1b[B");
+      await waitFor(
+        () => presenter.lastSnapshot?.selectedIndex === index + 1,
+        `down to ${index + 1}`,
+      );
+    }
+    expect(presenter.lastSnapshot?.selectedIndex).toBe(13);
+    expect(presenter.lastSnapshot?.visibleMatches.at(-1)?.name).toBe("exit");
+
+    // Wraps from exit back to help.
+    input.write("\x1b[B");
+    await waitFor(() => presenter.lastSnapshot?.selectedIndex === 0, "wrap to help");
+    expect(presenter.lastSnapshot?.visibleMatches[0]?.name).toBe("help");
+
+    // Back down to exit, then Tab + Enter reads "/exit ".
+    for (let index = 0; index < 13; index += 1) {
+      input.write("\x1b[B");
+      await waitFor(
+        () => presenter.lastSnapshot?.selectedIndex === index + 1,
+        `down again to ${index + 1}`,
+      );
+    }
+    input.write("\t");
+    await waitFor(() => presenter.events.at(-1) === "clear", "tab complete");
+    input.write("\r");
+    const text = await pending;
+    expect(text).toBe("/exit ");
+
+    prompt.close();
+  });
+
+  test("close restores keypress listeners and disables raw mode", async () => {
+    const presenter = new RecordingPresenter();
+    const input = new TtyInput();
+    const output = new TtyOutput();
+    const baseline = input.listenerCount("keypress");
+    const prompt = new ReadlinePrompt({
+      input,
+      output,
+      terminal: true,
+      enhanced: true,
+      theme: createTheme({ enabled: false }),
+      menuPresenterFactory: () => presenter,
+    });
+    const pending = prompt.read("\u203a ", { slashCommands: COMMANDS });
+    expect(input.listenerCount("keypress")).toBeGreaterThan(baseline);
+    prompt.close();
+    expect(input.listenerCount("keypress")).toBe(baseline);
+    expect(input.rawModeCalls.at(-1)).toBe(false);
+    await pending.catch(() => {});
+  });
+});

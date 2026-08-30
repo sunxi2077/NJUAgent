@@ -399,8 +399,18 @@ export class ReadlinePrompt implements Prompt {
   }
 
   #replaceCurrentLine(text: string): void {
-    this.#rl.write(undefined, { ctrl: true, name: "u" });
-    this.#rl.write(text);
+    // While active the readline line is exactly "/" + prefix, so completing
+    // only needs to append the remaining part. Programmatic control-key
+    // writes (Ctrl-U/backspace) are unreliable on real readline; plain string
+    // insertion is the one dependable primitive.
+    const prefix = this.#completion.snapshot().prefix;
+    const current = `/${prefix}`;
+    if (text.startsWith(current)) {
+      this.#rl.write(text.slice(current.length));
+    } else {
+      // Abnormal state: fall back to inserting nothing; the palette is closed
+      // by the caller so the user's line stays intact.
+    }
   }
 
   #currentLine(): string {
