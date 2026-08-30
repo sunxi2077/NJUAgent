@@ -199,7 +199,10 @@ class FakeInputRouter implements TerminalInputRouterPort {
   handler: TerminalKeyHandler | undefined;
   closed = false;
 
-  constructor(private readonly fakeReadline: FakeReadline) {}
+  constructor(
+    private readonly fakeReadline: FakeReadline,
+    private readonly delayWrites = false,
+  ) {}
 
   setHandler(handler: TerminalKeyHandler | undefined): void {
     this.handler = handler;
@@ -220,14 +223,21 @@ class FakeInputRouter implements TerminalInputRouterPort {
     if (decision !== "forward") {
       return;
     }
-    if (key.name === "return" || key.name === "enter") {
-      this.fakeReadline.submitLine();
-    } else if (key.name === "backspace") {
-      this.fakeReadline.write("\x7f");
-    } else if (key.name === undefined) {
-      // Plain printable input appends; named editing keys are handled by
-      // readline itself and are not simulated here.
-      this.fakeReadline.write(text !== "" ? text : key.sequence);
+    const deliver = () => {
+      if (key.name === "return" || key.name === "enter") {
+        this.fakeReadline.submitLine();
+      } else if (key.name === "backspace") {
+        this.fakeReadline.write("\x7f");
+      } else if (key.name === undefined) {
+        // Plain printable input appends; named editing keys are handled by
+        // readline itself and are not simulated here.
+        this.fakeReadline.write(text !== "" ? text : key.sequence);
+      }
+    };
+    if (this.delayWrites) {
+      setImmediate(deliver);
+    } else {
+      deliver();
     }
   }
 }
@@ -262,10 +272,10 @@ class FakeSlashMenuPresenter implements SlashMenuPresenterPort {
   }
 }
 
-function enhancedPrompt() {
+function enhancedPrompt(options?: { delayWrites?: boolean }) {
   const rl = new FakeReadline();
   const output = new TTYStdout();
-  const router = new FakeInputRouter(rl);
+  const router = new FakeInputRouter(rl, options?.delayWrites === true);
   const presenter = new FakeSlashMenuPresenter();
   const prompt = new ReadlinePrompt({
     input: process.stdin,
@@ -307,18 +317,22 @@ describe("ReadlinePrompt slash palette", () => {
     await pending;
   });
 
-  test("typing a prefix filters and Enter completes without executing", async () => {
+  test("typing a prefix filters synchronously and Enter completes without executing", async () => {
     const { prompt, rl, router, presenter } = enhancedPrompt();
     const pending = prompt.read("› ", { slashCommands: COMMANDS });
     pressText(router, "/");
-    await Promise.resolve();
-    for (const char of "go") {
-      pressText(router, char);
-      await Promise.resolve();
-    }
-    expect(presenter.renders.at(-1)!.matches.map((match) => match.name)).toEqual(["goal"]);
+    expect(presenter.renders.at(-1)?.prefix).toBe("");
+    expect(presenter.renders.at(-1)?.visibleMatches.map(({ name }) => name)).toEqual([
+      "help",
+      "goal",
+      "status",
+    ]);
+    pressText(router, "g");
+    expect(presenter.renders.at(-1)?.prefix).toBe("g");
+    expect(presenter.renders.at(-1)?.visibleMatches.map(({ name }) => name)).toEqual(["goal"]);
+    pressText(router, "o");
+    expect(presenter.renders.at(-1)?.prefix).toBe("go");
     pressKey(router, "return", "\r");
-    await Promise.resolve();
     expect(rl.line).toBe("/goal ");
     expect(presenter.clearCalls).toBeGreaterThan(0);
     // Pending is not resolved by the completion.
@@ -555,6 +569,88 @@ describe("ReadlinePrompt slash palette", () => {
     await Promise.resolve();
     expect(presenter.renders).toHaveLength(0);
     rl.emitLine("/");
+    await pending;
+  });
+
+  test("never completes from a stale readline line", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt({ delayWrites: true });
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    // Writes are deferred, so during key handling readline still shows the old
+    // line; the palette must track its own prefix, not read readline.
+    pressText(router, "/");
+    pressText(router, "g");
+    expect(presenter.renders.at(-1)?.prefix).toBe("g");
+    pressKey(router, "return", "\r");
+    expect(rl.line).toBe("/goal ");
+    rl.emitLine(rl.line);
+    await pending;
+  });
+
+  test("Backspace shrinks the prefix and an empty prefix closes the palette", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    for (const char of "go") {
+      pressText(router, char);
+    }
+    expect(presenter.renders.at(-1)?.prefix).toBe("go");
+    pressKey(router, "backspace", "\x7f");
+    expect(presenter.renders.at(-1)?.prefix).toBe("g");
+    pressKey(router, "backspace", "\x7f");
+    expect(presenter.renders.at(-1)?.prefix).toBe("");
+    pressKey(router, "backspace", "\x7f");
+    // Prefix was already empty: the palette closed and the backspace forwards.
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    rl.emitLine("");
+    await pending;
+  });
+
+  test("a single /go sequence opens the palette with prefix go", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/go");
+    expect(presenter.renders.at(-1)?.prefix).toBe("go");
+    expect(presenter.renders.at(-1)?.visibleMatches.map(({ name }) => name)).toEqual(["goal"]);
+    rl.emitLine("/go");
+    await pending;
+  });
+
+  test("a pasted /goal sequence with args never opens the palette and keeps every char", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/goal 完成测试");
+    expect(presenter.renders).toHaveLength(0);
+    expect(rl.line).toBe("/goal 完成测试");
+    rl.emitLine(rl.line);
+    await pending;
+  });
+
+  test("a chunk typed while active extends the prefix", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/go");
+    expect(presenter.renders.at(-1)?.prefix).toBe("go");
+    pressText(router, "al");
+    expect(presenter.renders.at(-1)?.prefix).toBe("goal");
+    expect(presenter.renders.at(-1)?.visibleMatches.map(({ name }) => name)).toEqual(["goal"]);
+    rl.emitLine("/goal");
+    await pending;
+  });
+
+  test.each([
+    ["space", " ", "space"],
+    ["second slash", "/", "slash"],
+    ["CJK", "完", "cjk"],
+    ["Left", "\x1b[D", "left"],
+    ["Ctrl-A", "\x01", "a"],
+  ])("%s exits the palette and forwards", async (_label, text, name) => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/go");
+    expect(presenter.renders.at(-1)?.active).toBe(true);
+    router.press("", { sequence: text, name, ctrl: false, meta: false, shift: false });
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    rl.emitLine("/go");
     await pending;
   });
 });

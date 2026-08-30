@@ -59,8 +59,8 @@ export type ReadlinePromptOptions = {
 
 type SlashInputMode = "inactive" | "active";
 
-const LEGAL_SLASH_LINE = /^\/([a-z0-9-]*)$/u;
-const COMMAND_CHAR = /^[a-zA-Z0-9-]$/u;
+const COMMAND_CHUNK = /^[a-zA-Z0-9-]+$/u;
+const COMPLETE_COMMAND_SEQUENCE = /^\/([a-zA-Z0-9-]*)$/u;
 
 export class ReadlinePrompt implements Prompt {
   readonly #rl: Interface;
@@ -248,10 +248,19 @@ export class ReadlinePrompt implements Prompt {
       }
 
       if (!active) {
-        // A fresh "/" on an empty line opens the palette after readline
-        // updates its line.
-        if (text === "/" && this.#hasCommands()) {
-          queueMicrotask(() => this.#syncSlashState());
+        // Open only from an untouched empty line and only for a complete
+        // command sequence; anything else fails open to readline.
+        const sequence = key.sequence !== "" ? key.sequence : text;
+        if (
+          this.#hasCommands() &&
+          this.#currentLine() === "" &&
+          this.#currentCursor() === 0
+        ) {
+          const match = COMPLETE_COMMAND_SEQUENCE.exec(sequence);
+          if (match !== null) {
+            this.#openPalette(match[1]!);
+            return "forward";
+          }
         }
         return "forward";
       }
@@ -273,13 +282,23 @@ export class ReadlinePrompt implements Prompt {
         case "return":
         case "enter":
           return this.#handleEnter();
-        case "backspace":
-          queueMicrotask(() => this.#syncSlashState());
+        case "backspace": {
+          const prefix = this.#completion.snapshot().prefix;
+          if (prefix !== "") {
+            this.#completion.updatePrefix(prefix.slice(0, -1));
+            this.#renderMenu();
+            return "forward";
+          }
+          // Prefix is empty: close so readline deletes the "/".
+          this.#closePalette();
           return "forward";
+        }
         default: {
-          if (COMMAND_CHAR.test(text)) {
-            // Keep filtering while the user types the command name.
-            queueMicrotask(() => this.#syncSlashState());
+          if (COMMAND_CHUNK.test(text)) {
+            // Track the prefix ourselves; never read readline line-by-key.
+            const next = `${this.#completion.snapshot().prefix}${text}`;
+            this.#completion.updatePrefix(next);
+            this.#renderMenu();
             return "forward";
           }
           // Space, a second slash, editing keys, CJK, or anything unknown:
@@ -307,9 +326,7 @@ export class ReadlinePrompt implements Prompt {
   }
 
   #handleEnter(): TerminalKeyDecision {
-    const line = this.#currentLine();
-    const match = LEGAL_SLASH_LINE.exec(line);
-    const prefix = match?.[1] ?? "";
+    const prefix = this.#completion.snapshot().prefix;
     const commands = this.#readOptions?.slashCommands ?? [];
     const exact = prefix !== "" && commands.some(
       (command) => command.name.toLowerCase() === prefix.toLowerCase(),
@@ -331,24 +348,15 @@ export class ReadlinePrompt implements Prompt {
     return "forward";
   }
 
-  #syncSlashState(): void {
-    if (this.#readOptions === undefined || !this.#hasCommands()) {
-      this.#closePalette();
+  #openPalette(prefix: string): void {
+    const commands = this.#readOptions?.slashCommands;
+    if (commands === undefined || commands.length === 0) {
       return;
     }
-    const line = this.#currentLine();
-    const cursor = this.#currentCursor();
-    const match = LEGAL_SLASH_LINE.exec(line);
-    if (match !== null && cursor === line.length) {
-      if (this.#slashMode !== "active") {
-        this.#slashMode = "active";
-        this.#completion.open(this.#readOptions.slashCommands!);
-      }
-      this.#completion.updatePrefix(match[1]!);
-      this.#renderMenu();
-      return;
-    }
-    this.#closePalette();
+    this.#completion.open(commands);
+    this.#slashMode = "active";
+    this.#completion.updatePrefix(prefix);
+    this.#renderMenu();
   }
 
   #renderMenu(): void {
@@ -365,7 +373,17 @@ export class ReadlinePrompt implements Prompt {
   }
 
   #disablePalette(): void {
-    this.#closePalette();
+    try {
+      this.#presenter?.clear();
+    } catch {
+      // Ignore presenter cleanup failures; the user must stay able to type.
+    }
+    try {
+      this.#completion.close();
+    } catch {
+      // Ignore model cleanup failures.
+    }
+    this.#slashMode = "inactive";
     this.#inputRouter?.setHandler(undefined);
   }
 
