@@ -12,18 +12,22 @@ function descriptor(name: string, description = `the ${name} command`): SlashCom
 }
 
 function snapshot(overrides: Partial<SlashCompletionSnapshot> = {}): SlashCompletionSnapshot {
+  const matches = [
+    descriptor("help"),
+    descriptor("status", "Show current session status"),
+    descriptor("sessions"),
+    descriptor("resume"),
+    descriptor("new"),
+    descriptor("history"),
+  ];
   return {
     active: true,
     prefix: "",
     selectedIndex: 0,
-    matches: [
-      descriptor("help"),
-      descriptor("status", "Show current session status"),
-      descriptor("sessions"),
-      descriptor("resume"),
-      descriptor("new"),
-      descriptor("history"),
-    ],
+    windowStart: 0,
+    totalMatches: matches.length,
+    matches,
+    visibleMatches: matches.slice(0, 6),
     ...overrides,
   };
 }

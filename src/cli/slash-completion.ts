@@ -4,30 +4,36 @@ export type SlashCompletionSnapshot = {
   active: boolean;
   prefix: string;
   selectedIndex: number;
+  windowStart: number;
+  totalMatches: number;
   matches: readonly SlashCommandDescriptor[];
+  visibleMatches: readonly SlashCommandDescriptor[];
 };
 
-const DEFAULT_MAX_VISIBLE = 6;
+const DEFAULT_PAGE_SIZE = 6;
 const LEGAL_PREFIX = /^[a-z0-9-]*$/iu;
 
 /**
  * Pure candidate-filtering and selection state machine for the slash palette.
- * Knows nothing about streams, readline, the renderer, or sessions; every
- * public value is a defensive copy.
+ * `matches` holds every prefix match (never truncated); `visibleMatches` is a
+ * `pageSize`-sized window around the absolute `selectedIndex`. Knows nothing
+ * about streams, readline, the renderer, or sessions; every public value is a
+ * defensive copy.
  */
 export class SlashCompletionModel {
-  readonly #maxVisible: number;
+  readonly #pageSize: number;
   #commands: readonly SlashCommandDescriptor[] = [];
   #active = false;
   #prefix = "";
   #selectedIndex = -1;
+  #windowStart = 0;
 
-  constructor(options?: { maxVisible?: number }) {
-    const maxVisible = options?.maxVisible ?? DEFAULT_MAX_VISIBLE;
-    if (!Number.isInteger(maxVisible) || maxVisible <= 0) {
-      throw new RangeError("maxVisible must be a positive integer");
+  constructor(options?: { pageSize?: number }) {
+    const pageSize = options?.pageSize ?? DEFAULT_PAGE_SIZE;
+    if (!Number.isInteger(pageSize) || pageSize <= 0) {
+      throw new RangeError("pageSize must be a positive integer");
     }
-    this.#maxVisible = maxVisible;
+    this.#pageSize = pageSize;
   }
 
   open(commands: readonly SlashCommandDescriptor[]): SlashCompletionSnapshot {
@@ -53,8 +59,9 @@ export class SlashCompletionModel {
     if (!this.#active || this.#matches().length === 0) {
       return this.snapshot();
     }
-    const count = this.#matches().length;
-    this.#selectedIndex = (this.#selectedIndex + delta + count) % count;
+    const total = this.#matches().length;
+    this.#selectedIndex = (this.#selectedIndex + delta + total) % total;
+    this.#fitWindow(total);
     return this.snapshot();
   }
 
@@ -69,16 +76,24 @@ export class SlashCompletionModel {
   close(): SlashCompletionSnapshot {
     this.#active = false;
     this.#selectedIndex = -1;
+    this.#windowStart = 0;
     this.#commands = [];
     return this.snapshot();
   }
 
   snapshot(): SlashCompletionSnapshot {
+    const matches = this.#matches().map((command) => this.#copy(command));
+    const visibleMatches = matches
+      .slice(this.#windowStart, this.#windowStart + this.#pageSize)
+      .map((command) => this.#copy(command));
     return {
       active: this.#active,
       prefix: this.#prefix,
       selectedIndex: this.#selectedIndex,
-      matches: this.#matches().map((command) => this.#copy(command)),
+      windowStart: this.#windowStart,
+      totalMatches: matches.length,
+      matches,
+      visibleMatches,
     };
   }
 
@@ -87,15 +102,16 @@ export class SlashCompletionModel {
       return [];
     }
     const prefix = this.#prefix.toLowerCase();
-    return this.#commands
-      .filter((command) => command.name.toLowerCase().startsWith(prefix))
-      .slice(0, this.#maxVisible);
+    return this.#commands.filter((command) =>
+      command.name.toLowerCase().startsWith(prefix),
+    );
   }
 
   #rebuild(previousName?: string): SlashCompletionSnapshot {
     const matches = this.#matches();
     if (matches.length === 0) {
       this.#selectedIndex = -1;
+      this.#windowStart = 0;
       return this.snapshot();
     }
     const preserved = previousName === undefined
@@ -104,7 +120,25 @@ export class SlashCompletionModel {
     this.#selectedIndex = preserved === undefined
       ? 0
       : matches.indexOf(preserved);
+    this.#fitWindow(matches.length);
     return this.snapshot();
+  }
+
+  /** Keeps the window anchored so the selected item is always visible. */
+  #fitWindow(total: number): void {
+    if (total === 0 || this.#selectedIndex < 0) {
+      this.#windowStart = 0;
+      return;
+    }
+    if (this.#selectedIndex < this.#windowStart) {
+      this.#windowStart = this.#selectedIndex;
+    } else if (this.#selectedIndex >= this.#windowStart + this.#pageSize) {
+      this.#windowStart = this.#selectedIndex - this.#pageSize + 1;
+    }
+    this.#windowStart = Math.min(
+      this.#windowStart,
+      Math.max(0, total - this.#pageSize),
+    );
   }
 
   #copy(command: SlashCommandDescriptor): SlashCommandDescriptor {
