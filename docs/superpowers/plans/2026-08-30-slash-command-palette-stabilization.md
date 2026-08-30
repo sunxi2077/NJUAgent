@@ -1,5 +1,7 @@
 # Slash Command Palette Stabilization Implementation Plan
 
+> **Implementation correction:** Task 2 原定的 cursor-down Presenter 在真实终端底部会触发滚屏，已被后续实现纠正为“菜单位于输入行上方的 live region”。最终行为以对应设计规格第 8 节和当前代码为准；不要重新执行 Task 2 中的 cursor-down 步骤。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 修复 Slash Command Palette 在真实 TTY 中命令被截断、输入后不刷新、错误补全、菜单清除错位和异步异常逃逸的问题。

@@ -2,7 +2,7 @@
 
 日期：2026-08-30
 
-状态：已确认，等待实施
+状态：已实施；Presenter 渲染方案在真实 PTY 验收后纠偏为输入行上方 live region
 
 修复基线：`feat/slash-command-palette` 分支，提交 `61da68e`
 
@@ -89,7 +89,7 @@ microtask 执行时 readline 的 `line` / `cursor` 不保证已经包含刚刚�
 3. footer 显示当前位置，例如 `1–6 / 14`、`7–12 / 14`；
 4. 输入 `g` 后在同一次 keypress 处理内把候选过滤为 `/goal`，不依赖 timer、microtask 或 readline 更新时机；
 5. Enter/Tab 总是基于当前 Palette prefix 和 selected command 补全，不使用过期 snapshot；
-6. 菜单更新只修改输入行下方的临时区域，不清除输入行上方内容；
+6. 菜单作为输入行上方的 live region 更新，只向上移动自身拥有的菜单行；
 7. Presenter/Model 内部异常关闭 Palette 并把当前输入交还 readline，不产生 uncaught exception；
 8. 中文参数、IME、粘贴、`//`、Ctrl-C、Ctrl-D、Esc、Backspace、Left/Right 保持原契约；
 9. non-TTY、`NO_COLOR`、`TERM=dumb` 保持普通 readline；
@@ -245,37 +245,44 @@ const COMMAND_CHUNK = /^[a-zA-Z0-9-]+$/u;
 
 关闭后不再尝试根据 readline line 自动重新打开。只有用户回到空行再次输入 `/` 才重新进入。
 
-## 8. Menu Presenter 坐标修复
+## 8. Menu Presenter 最终渲染方案
+
+原先提出的“save cursor 后从输入行持续 cursor-down”方案在真实终端底部会触发
+滚屏，使保存的坐标失效。该方案已废弃。最终实现把菜单放在输入提示上方，
+readline 输入行始终是 live region 的最后一行。
 
 ### 8.1 绘制锚点
 
 每次 `render()` 调用时，真实光标位于 readline 输入行。Presenter 必须：
 
-1. 保存输入光标；
-2. 每行先向下移动一行；
-3. 回到列 0；
-4. 清除整行；
-5. 写入菜单行；
-6. 最后恢复输入光标。
+1. 清除当前输入行并回到列 0；
+2. 若已有菜单，使用旧菜单的硬换行数，并加上 readline 输入文本额外换行的行数；
+3. 从该位置清除到屏幕底部；
+4. 把新菜单作为普通 `\r\n` 终端行输出；
+5. 把光标移动到 readline `getCursorPos()` 所记录的旧逻辑位置；
+6. 调用注入的 `redrawInput()`，由 readline 在菜单下方恢复 prompt 和输入文本。
 
-禁止依赖 `\r\n` 作为菜单定位手段，避免在终端底部触发不受控滚屏。
+禁止使用 save/restore cursor 跨越菜单输出，也禁止从输入行向下 cursor-down。
+普通行输出即使触发滚屏，菜单与输入行的相对关系仍保持正确。
 
 ### 8.2 清除
 
-`#clearRows()` 必须从输入行向下清除：
+清除时只跨越 Presenter 自己拥有的菜单行：
 
 ```text
-save cursor
-repeat lastRows times:
-  cursor down 1
-  carriage return
-  clear entire line
-restore cursor
+clear current readline row
+cursor to column 0
+cursor up ownedPhysicalMenuRows + wrappedInputRows
+clear screen down
+redraw readline input
 ```
 
-使用 clear-entire-line `ESC[2K`，而不是只清除光标右侧的 `ESC[K`。
+cursor-up 只能使用 Presenter 记录的菜单文本和 readline 光标位置计算，不能越过
+Presenter 所拥有的菜单区域。紧凑模式的每一行必须短于终端列数，避免在右边缘隐式换行。
 
-清除过程中不得出现 cursor-up。测试必须明确断言 clear delta 不包含 `\x1b[A`。
+不同终端、tmux 对 resize 后既有硬换行的 reflow 行为并不一致，因此 resize 时不按
+新宽度推算旧菜单行数，也不继续动态菜单；Presenter 保守清理后关闭 Palette，把输入
+交还普通 readline。用户再次输入 `/` 时可重新打开。
 
 ### 8.3 视窗 footer
 
@@ -336,12 +343,12 @@ resize listener 内部不得抛出。格式化或 output.write 同步抛错时�
 
 测试只看“包含某个 ANSI”不够。必须解析 render/clear delta，断言：
 
-- save/restore 成对；
-- 每个菜单行由 cursor-down 定位；
-- clear 使用 `\r\x1b[2K`；
-- clear 不包含 cursor-up；
+- 不出现 save/restore cursor；
+- 菜单使用普通行输出，最后调用 readline redraw；
+- 更新时 cursor-up 数量严格等于旧菜单的硬换行数加输入换行数；
+- 输出不包含 save/restore cursor 或 cursor-down；
 - 从 8 行变 3 行后旧 8 行全部被清除；
-- 输入行上方没有任何定位序列。
+- 窄终端每行不触发右边缘换行；resize 时关闭菜单且不越界清除更早的会话历史。
 
 ### 10.3 Prompt 单元测试
 
@@ -426,7 +433,8 @@ package runtime dependencies
 - `/` 后输入 `g` 立即过滤为 `/goal`；
 - 不存在 Palette `queueMicrotask` 状态同步；
 - Enter 不会基于过期候选补全错误命令；
-- clear delta 不含 cursor-up；
+- Presenter 不使用 save/restore cursor 或 cursor-down；
+- 更新/清除只向上跨越自身菜单的硬换行数和输入换行数；
 - 菜单关闭后没有残影，不清除上方历史；
 - Presenter 抛错测试没有 unhandled error；
 - 真实 stream 集成测试覆盖 `/` → `g` → goal；

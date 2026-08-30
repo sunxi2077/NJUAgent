@@ -429,17 +429,21 @@ export interface SlashMenuPresenterPort {
 
 生产 `SlashMenuPresenter`：
 
-- 使用 ANSI save cursor / restore cursor；
-- 菜单每一行位于 readline 输入行下方；
-- 保存上次实际行数；更新前清除 `max(oldRows, newRows)`；
-- clear 后光标回到原输入位置；
+- 菜单位于 readline 输入行上方，输入行是 live region 的最后一行；
+- 更新前先清除当前输入行，再只向上移动 Presenter 自己拥有的旧菜单行；
+- 菜单按普通终端行输出，随后通过回调执行 `readline.prompt(true)`；
+- 不跨终端滚屏保存/恢复光标，也不向输入行下方执行 cursor-down；
+- 保存上次菜单硬换行数，并计入 readline 输入的换行行数；重绘前恢复 readline 记录的逻辑光标位置；
+- clear 后立即重绘输入行；
 - suspend 清除但不关闭 Model；
 - resume 仅在 active 时重绘；
 - close 移除 stdout resize 监听；
-- resize 时按新 columns 清除并重绘；
+- resize 时保守清除并关闭 Palette，不猜测不同终端对既有行的 reflow 行为；
+- resize 写入失败时关闭 Palette 并把按键处理权交还普通 readline；
 - 不向非增强模式构造 Presenter。
 
-Presenter 的控制序列只存在于增强 TTY；测试必须用 `stripVTControlCharacters` 验证可见文本，并单独断言清行/光标保存恢复序列存在。
+Presenter 的控制序列只存在于增强 TTY；测试必须验证可见文本、live-region
+替换顺序和 readline 重绘回调。真实 PTY 验收必须覆盖输入提示位于终端底部的情况。
 
 ## 13. 与 CliSession 和 Bootstrap 集成
 

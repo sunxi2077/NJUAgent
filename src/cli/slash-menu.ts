@@ -1,3 +1,10 @@
+import {
+  clearLine,
+  clearScreenDown,
+  cursorTo,
+  moveCursor,
+} from "node:readline";
+
 import type { SlashCompletionSnapshot } from "./slash-completion.js";
 import { sanitizeTerminalText, terminalWidth, truncateToTerminalWidth } from "./terminal-text.js";
 import type { TerminalTheme } from "./theme.js";
@@ -7,11 +14,6 @@ const MAX_FRAME_WIDTH = 88;
 const COMPACT_MAX_ROWS = 3;
 const FOOTER = "↑↓ select · Tab complete · Esc close";
 const COMPACT_FOOTER = "↑↓ · Tab · Esc";
-
-const ANSI_SAVE_CURSOR = "\x1b[s";
-const ANSI_RESTORE_CURSOR = "\x1b[u";
-const ANSI_CURSOR_DOWN_ONE = "\x1b[1B";
-const ANSI_CLEAR_ENTIRE_LINE = "\x1b[2K";
 
 /**
  * Pure menu formatting. Full mode draws a single-column box whose every row
@@ -29,7 +31,7 @@ export function formatSlashMenu(
   const { theme } = options;
   const safeColumns = Math.floor(options.columns);
   if (safeColumns < FULL_MENU_MIN_COLUMNS) {
-    return formatCompact(snapshot, theme);
+    return formatCompact(snapshot, theme, safeColumns);
   }
   const width = Math.min(Math.max(safeColumns, FULL_MENU_MIN_COLUMNS) - 2, MAX_FRAME_WIDTH);
   return formatFull(snapshot, theme, width);
@@ -110,16 +112,28 @@ function formatFull(
   return [top, ...rows, bottom];
 }
 
-function formatCompact(snapshot: SlashCompletionSnapshot, theme: TerminalTheme): string[] {
+function formatCompact(
+  snapshot: SlashCompletionSnapshot,
+  theme: TerminalTheme,
+  columns: number,
+): string[] {
+  // Leave one free cell so writing the last visible character never triggers
+  // an implicit terminal wrap/scroll at the right edge.
+  const maxWidth = Math.max(0, columns - 1);
+  const clip = (text: string): string => truncateToTerminalWidth(
+    sanitizeTerminalText(text),
+    maxWidth,
+  );
   const rows = snapshot.visibleMatches.slice(0, COMPACT_MAX_ROWS).map((command, visibleIndex) => {
     const absoluteIndex = snapshot.windowStart + visibleIndex;
+    const row = clip(`${absoluteIndex === snapshot.selectedIndex ? "› " : "  "}/${command.name}`);
     return absoluteIndex === snapshot.selectedIndex
-      ? theme.brandStrong(`› /${command.name}`)
-      : `  /${command.name}`;
+      ? theme.brandStrong(row)
+      : row;
   });
-  const footerText = `${COMPACT_FOOTER} · ${compactRange(snapshot)}`;
+  const footerText = clip(`${COMPACT_FOOTER} · ${compactRange(snapshot)}`);
   if (rows.length === 0) {
-    return [theme.muted("No matching commands"), theme.muted(footerText)];
+    return [theme.muted(clip("No matching commands")), theme.muted(footerText)];
   }
   return [...rows, theme.muted(footerText)];
 }
@@ -136,21 +150,31 @@ export type SlashMenuPresenterOptions = {
   output: NodeJS.WritableStream & { columns?: number };
   theme: TerminalTheme;
   fallbackColumns?: number;
+  /** Redraws readline on the blank line immediately below the menu. */
+  redrawInput: () => void;
+  /** Readline's logical cursor position, used to restore its redraw anchor. */
+  inputCursor: () => { rows: number; cols: number };
+  /** Called when a terminal write failure permanently disables the palette. */
+  onDisable?: () => void;
 };
 
 /**
- * Draws the menu into the temporary region below the readline input line.
- * Positioning always moves the cursor down from the saved input position and
- * clears whole lines; it never uses cursor-up, so history above the input line
- * is never touched. A throwing writer during resize disables the presenter
- * instead of escaping.
+ * Owns a live region immediately above the readline input line. Replacing the
+ * menu clears the current input line, moves upward only across menu rows owned
+ * by this presenter, writes the new menu as ordinary terminal lines, and then
+ * asks readline to redraw below it. This remains stable when the prompt starts
+ * on the terminal's bottom row because it never saves a cursor position across
+ * terminal scrolling.
  */
 export class SlashMenuPresenter implements SlashMenuPresenterPort {
   readonly #output: NodeJS.WritableStream & { columns?: number };
   readonly #theme: TerminalTheme;
   readonly #fallbackColumns: number;
+  readonly #redrawInput: () => void;
+  readonly #inputCursor: () => { rows: number; cols: number };
+  readonly #onDisable: (() => void) | undefined;
   readonly #onResize = (): void => this.#redrawOnResize();
-  #lastRows = 0;
+  #lastLines: readonly string[] = [];
   #lastSnapshot: SlashCompletionSnapshot | null = null;
   #suspended = false;
   #closed = false;
@@ -160,6 +184,9 @@ export class SlashMenuPresenter implements SlashMenuPresenterPort {
     this.#output = options.output;
     this.#theme = options.theme;
     this.#fallbackColumns = options.fallbackColumns ?? 80;
+    this.#redrawInput = options.redrawInput;
+    this.#inputCursor = options.inputCursor;
+    this.#onDisable = options.onDisable;
     this.#output.on("resize", this.#onResize);
   }
 
@@ -171,7 +198,7 @@ export class SlashMenuPresenter implements SlashMenuPresenterPort {
       columns: this.#columns(),
       theme: this.#theme,
     });
-    this.#draw(lines);
+    this.#draw(lines, true);
     this.#lastSnapshot = snapshot;
     this.#suspended = false;
   }
@@ -180,14 +207,19 @@ export class SlashMenuPresenter implements SlashMenuPresenterPort {
     if (this.#closed || this.#disabled) {
       return;
     }
-    this.#clearRows();
+    const cursor = this.#cursorPosition();
+    if (this.#eraseLiveRegion(cursor)) {
+      this.#lastSnapshot = null;
+      this.#restoreReadlineCursor(cursor);
+      this.#redrawInput();
+    }
   }
 
   suspend(): void {
     if (this.#closed || this.#disabled) {
       return;
     }
-    this.#clearRows();
+    this.#eraseLiveRegion(this.#cursorPosition());
     this.#suspended = true;
   }
 
@@ -199,7 +231,9 @@ export class SlashMenuPresenter implements SlashMenuPresenterPort {
       columns: this.#columns(),
       theme: this.#theme,
     });
-    this.#draw(lines);
+    // External output now owns the current cursor position. Draw from there;
+    // do not erase relative to readline's stale pre-suspend input location.
+    this.#draw(lines, false);
     this.#lastSnapshot = snapshot;
     this.#suspended = false;
   }
@@ -209,64 +243,108 @@ export class SlashMenuPresenter implements SlashMenuPresenterPort {
       return;
     }
     if (!this.#disabled) {
-      this.#clearRows();
+      this.#eraseLiveRegion(this.#cursorPosition());
     }
     this.#output.off("resize", this.#onResize);
     this.#closed = true;
     this.#lastSnapshot = null;
   }
 
-  #draw(lines: readonly string[]): void {
-    // Clear any previously drawn menu region, then redraw from the input line.
-    this.#clearRows();
+  #draw(lines: readonly string[], eraseInput: boolean): void {
+    // During normal input, replace the complete owned region. After external
+    // output, start at the renderer's fresh line instead. In both cases,
+    // restore readline's logical cursor before asking it to refresh itself.
+    const cursor = this.#cursorPosition();
+    if (eraseInput) {
+      this.#eraseLiveRegion(cursor, true);
+    }
     if (lines.length === 0) {
+      this.#restoreReadlineCursor(cursor);
+      this.#redrawInput();
       return;
     }
-    this.#output.write(ANSI_SAVE_CURSOR);
     for (const line of lines) {
-      this.#output.write(
-        `${ANSI_CURSOR_DOWN_ONE}\r${ANSI_CLEAR_ENTIRE_LINE}${line}`,
-      );
+      this.#output.write(`${line}\r\n`);
     }
-    this.#output.write(ANSI_RESTORE_CURSOR);
-    this.#lastRows = lines.length;
+    this.#lastLines = [...lines];
+    this.#restoreReadlineCursor(cursor);
+    this.#redrawInput();
   }
 
-  #clearRows(): void {
-    if (this.#lastRows === 0) {
-      return;
+  #eraseLiveRegion(
+    cursor: { rows: number; cols: number },
+    force = false,
+  ): boolean {
+    if (this.#lastLines.length === 0 && !force) {
+      return false;
     }
-    this.#output.write(ANSI_SAVE_CURSOR);
-    for (let index = 0; index < this.#lastRows; index += 1) {
-      this.#output.write(
-        `${ANSI_CURSOR_DOWN_ONE}\r${ANSI_CLEAR_ENTIRE_LINE}`,
-      );
+    clearLine(this.#output, 0);
+    cursorTo(this.#output, 0);
+    // Every rendered line was strictly shorter than the terminal width at the
+    // time it was written. On resize, terminals disagree about historical
+    // reflow, so the only conservative owned-row count is the hard line count.
+    const rowsUp = this.#lastLines.length + cursor.rows;
+    if (rowsUp > 0) {
+      moveCursor(this.#output, 0, -rowsUp);
     }
-    this.#output.write(ANSI_RESTORE_CURSOR);
-    this.#lastRows = 0;
+    clearScreenDown(this.#output);
+    this.#lastLines = [];
+    return true;
   }
 
   #redrawOnResize(): void {
     if (this.#closed || this.#disabled || this.#lastSnapshot === null || this.#suspended) {
       return;
     }
+    const cursor = this.#cursorPosition();
     try {
-      const lines = formatSlashMenu(this.#lastSnapshot, {
-        columns: this.#columns(),
-        theme: this.#theme,
-      });
-      this.#draw(lines);
+      // Existing hard lines may or may not reflow across terminals. Close the
+      // optional palette instead of guessing and risking deletion of history.
+      this.#eraseLiveRegion(cursor);
+      this.#restoreReadlineCursor(cursor);
     } catch {
-      // A throwing formatter/writer must never escape a resize event.
+      // A throwing writer must never escape a resize event.
+    } finally {
       this.#disable();
     }
   }
 
   #disable(): void {
+    if (this.#disabled) {
+      return;
+    }
     this.#disabled = true;
-    this.#lastRows = 0;
+    this.#lastLines = [];
     this.#lastSnapshot = null;
     this.#output.off("resize", this.#onResize);
+    try {
+      this.#onDisable?.();
+    } catch {
+      // Disabling the optional palette must never escape into terminal input.
+    }
+  }
+
+  #cursorPosition(): { rows: number; cols: number } {
+    try {
+      const position = this.#inputCursor();
+      return {
+        rows: Number.isFinite(position.rows) && position.rows > 0
+          ? Math.floor(position.rows)
+          : 0,
+        cols: Number.isFinite(position.cols) && position.cols > 0
+          ? Math.floor(position.cols)
+          : 0,
+      };
+    } catch {
+      return { rows: 0, cols: 0 };
+    }
+  }
+
+  #restoreReadlineCursor(cursor: { rows: number; cols: number }): void {
+    if (cursor.rows > 0) {
+      moveCursor(this.#output, 0, cursor.rows);
+    }
+    cursorTo(this.#output, cursor.cols);
   }
 
   #columns(): number {

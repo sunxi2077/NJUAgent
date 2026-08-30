@@ -388,10 +388,10 @@ CLI
 - [x] `SlashCommandRouter.descriptors()` 只暴露 name/usage/description（注册顺序、防御性副本）。
 - [x] `SlashCompletionModel` 纯状态机（大小写不敏感前缀、全量 matches + 6 行滚动视窗、首尾循环、选中保持、防御性副本）。
 - [x] `formatSlashMenu` 完整单列边框（<40 列紧凑降级）+ 视窗范围 footer + `sanitizeTerminalText` 清理描述。
-- [x] `SlashMenuPresenter` 临时区域（save/restore cursor、suspend/resume、resize、close 清理）。
+- [x] `SlashMenuPresenter` 输入行上方 live region（菜单替换、readline redraw、suspend/resume、resize、close 清理）。
 - [x] `TerminalInputRouter` 独占 stdin→readline 字节通道（consume/forward、handler 抛错 fail-open、close 不关 stdin）。
 - [x] `ReadlinePrompt` Palette controller（决策表：Tab/Esc/方向键/前缀 Enter 消费，其余 fail-open；`//`、空格、中文、粘贴不丢字）。
 - [x] CliSession 主 read 传入最新 descriptors；Bootstrap 统一 enhanced/theme（Prompt 与 Renderer 同一主题）。
 - [x] 非 TTY / NO_COLOR / TERM=dumb 无动态菜单与 ANSI；普通输入与权限确认不触发 Palette。
 - [x] 跨组件集成与生命周期测试覆盖完整用户路径、失败开放、interrupt/close/EOF/resize 清理，并含真实 Node stream/readline 集成回归（连续三次通过）。
-- [x] 稳定化：Palette 同步维护 ASCII prefix（无 microtask 状态同步）、Presenter 使用 cursor-down + clear-entire-line（无 cursor-up）、resize 异常隔离。
+- [x] 稳定化：Palette 同步维护 ASCII prefix（无 microtask 状态同步）；Presenter 使用输入行上方的 owned live region，不跨滚屏保存光标；resize 异常隔离。

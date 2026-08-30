@@ -145,6 +145,16 @@ describe("formatSlashMenu", () => {
     expect(visible.join("\n")).toContain("↑↓ · Tab · Esc · 1–3/14");
   });
 
+  test.each([10, 20, 39])(
+    "compact rows stay within a %i-column terminal",
+    (columns) => {
+      const lines = formatSlashMenu(snapshot(), { columns, theme });
+      for (const line of lines) {
+        expect(terminalWidth(line)).toBeLessThan(columns);
+      }
+    },
+  );
+
   test("theme enabled and disabled produce the same visible widths", () => {
     const enabled = formatSlashMenu(snapshot(), { columns: 80, theme });
     const disabled = formatSlashMenu(snapshot(), { columns: 80, theme: createTheme({ enabled: false }) });
@@ -194,54 +204,101 @@ class FakeOutput {
   }
 }
 
-function makePresenter(columns = 80) {
+function makePresenter(
+  columns = 80,
+  options?: {
+    inputCursor?: () => { rows: number; cols: number };
+    onDisable?: () => void;
+  },
+) {
   const output = new FakeOutput();
   output.columns = columns;
+  const redrawEvents: string[] = [];
   const presenter = new SlashMenuPresenter({
     output: output as unknown as NodeJS.WritableStream & { columns?: number },
     theme,
+    redrawInput: () => {
+      redrawEvents.push("redraw");
+      output.write("<PROMPT>");
+    },
+    inputCursor: options?.inputCursor ?? (() => ({ rows: 0, cols: 0 })),
+    ...(options?.onDisable === undefined ? {} : { onDisable: options.onDisable }),
   });
-  return { presenter, output };
+  return { presenter, output, redrawEvents };
 }
 
 describe("SlashMenuPresenter", () => {
-  test("first render saves the cursor, draws the menu below, and restores it", () => {
-    const { presenter, output } = makePresenter();
+  test("renders the menu as regular lines above and then redraws the input", () => {
+    const { presenter, output, redrawEvents } = makePresenter();
     presenter.render(snapshot());
     const text = output.text();
-    expect(text).toContain("\x1b[s");
-    expect(text).toContain("\x1b[1B\r\x1b[2K");
-    expect(text).toContain("\x1b[u");
     expect(text).toContain("Commands");
     expect(text).toContain("/help");
-    // No cursor-up positioning anywhere.
-    expect(text).not.toContain("\x1b[A");
+    expect(text).toMatch(/Commands[\s\S]*\n\x1b\[1G<PROMPT>$/u);
+    expect(redrawEvents).toEqual(["redraw"]);
+    expect(text).not.toContain("\x1b[s");
+    expect(text).not.toContain("\x1b[u");
+    expect(text).not.toContain("\x1b[1B");
   });
 
-  test("clear moves down below the input line and never uses cursor-up", () => {
-    const { presenter, output } = makePresenter();
+  test("clear removes the owned menu above the prompt and redraws the input", () => {
+    const { presenter, output, redrawEvents } = makePresenter();
     presenter.render(snapshot());
     const before = output.text().length;
     presenter.clear();
     const delta = output.text().slice(before);
-    expect(delta).toContain("\x1b[s");
-    expect(delta).toContain("\x1b[1B\r\x1b[2K");
-    expect(delta).toContain("\x1b[u");
-    expect(delta).not.toContain("\x1b[A");
+    expect(delta).toContain("\x1b[8A");
+    expect(delta).toContain("\x1b[0J");
+    expect(delta).toMatch(/<PROMPT>$/u);
+    expect(redrawEvents).toEqual(["redraw", "redraw"]);
+    expect(delta).not.toContain("\x1b[1B");
   });
 
-  test("a shorter second render clears every previously drawn row", () => {
-    const { presenter, output } = makePresenter();
+  test("a shorter render replaces the same live region instead of appending a second menu", () => {
+    const { presenter, output, redrawEvents } = makePresenter();
     presenter.render(snapshot());
     const first = output.text();
     presenter.render(snapshot({ visibleMatches: FOURTEEN_COMMANDS.slice(0, 1) }));
     const delta = output.text().slice(first.length);
-    expect(delta).toContain("\x1b[1B\r\x1b[2K");
+    expect(delta).toContain("\x1b[8A");
+    expect(delta).toContain("\x1b[0J");
     expect(delta).not.toContain("/resume");
     expect(delta).toContain("/help");
+    expect(redrawEvents).toEqual(["redraw", "redraw"]);
+    expect(delta).not.toContain("\x1b[1B");
   });
 
-  test("clear is idempotent and restores the cursor", () => {
+  test("clear accounts for a wrapped readline input row", () => {
+    const { presenter, output } = makePresenter(80, {
+      inputCursor: () => ({ rows: 1, cols: 6 }),
+    });
+    presenter.render(snapshot());
+    const before = output.text().length;
+    presenter.clear();
+    const delta = output.text().slice(before);
+    expect(delta).toContain("\x1b[9A");
+    expect(delta).toMatch(/\x1b\[1B\x1b\[7G<PROMPT>$/u);
+  });
+
+  test("resize closes conservatively without guessing how old terminal rows reflowed", () => {
+    let disabled = 0;
+    const { presenter, output } = makePresenter(80, {
+      onDisable: () => {
+        disabled += 1;
+      },
+    });
+    presenter.render(snapshot());
+    output.columns = 39;
+    const before = output.text().length;
+    output.resize();
+    const delta = output.text().slice(before);
+    expect(delta).toContain("\x1b[8A");
+    expect(delta).not.toContain("\x1b[16A");
+    expect(delta).not.toContain("Commands");
+    expect(disabled).toBe(1);
+  });
+
+  test("clear is idempotent and redraws the prompt only once", () => {
     const { presenter, output } = makePresenter();
     presenter.render(snapshot());
     presenter.clear();
@@ -251,15 +308,19 @@ describe("SlashMenuPresenter", () => {
   });
 
   test("suspend clears but resume redraws the active snapshot", () => {
-    const { presenter, output } = makePresenter();
+    const { presenter, output } = makePresenter(80, {
+      inputCursor: () => ({ rows: 1, cols: 4 }),
+    });
     presenter.render(snapshot());
     const before = output.text();
     presenter.suspend();
     const suspended = output.text();
     expect(suspended.length).toBeGreaterThan(before.length);
     presenter.resume(snapshot());
-    const resumed = output.text();
+    const resumed = output.text().slice(suspended.length);
     expect(resumed).toContain("/help");
+    expect(resumed).not.toMatch(/\x1b\[[0-9]+A/u);
+    expect(resumed).toMatch(/\x1b\[1B\x1b\[5G<PROMPT>$/u);
   });
 
   test("resume of an inactive snapshot draws no menu", () => {
@@ -272,14 +333,16 @@ describe("SlashMenuPresenter", () => {
     expect(output.text()).toBe(afterSuspend);
   });
 
-  test("resize redraws with the new width", () => {
+  test("resize closes the live menu and disables further rendering", () => {
     const { presenter, output } = makePresenter(120);
     presenter.render(snapshot());
     const wide = output.text();
     output.columns = 60;
     output.resize();
-    const narrowed = output.text();
-    expect(narrowed.length).toBeGreaterThan(wide.length);
+    const afterResize = output.text();
+    expect(afterResize.length).toBeGreaterThan(wide.length);
+    presenter.render(snapshot());
+    expect(output.text()).toBe(afterResize);
   });
 
   test("close clears the region and removes the resize listener once", () => {
@@ -302,11 +365,17 @@ describe("SlashMenuPresenter", () => {
   });
 
   test("a throwing writer on resize disables the presenter without escaping", () => {
-    const { presenter, output } = makePresenter();
+    let disabled = 0;
+    const { presenter, output } = makePresenter(80, {
+      onDisable: () => {
+        disabled += 1;
+      },
+    });
     presenter.render(snapshot());
     output.throwOnWrite = true;
     expect(() => output.resize()).not.toThrow();
     expect(output.resizeListeners.size).toBe(0);
+    expect(disabled).toBe(1);
     output.throwOnWrite = false;
     const before = output.text();
     presenter.render(snapshot());

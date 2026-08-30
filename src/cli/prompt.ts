@@ -84,6 +84,7 @@ export class ReadlinePrompt implements Prompt {
     this.#installProcessSigint = !options.terminal;
     const theme = options.theme ?? createTheme({ enabled: false });
     this.#completion = new SlashCompletionModel();
+    let readline: Interface | undefined;
 
     const enhanced = options.enhanced === true && options.terminal;
     if (enhanced) {
@@ -98,6 +99,16 @@ export class ReadlinePrompt implements Prompt {
           this.#presenter = presenterFactory({
             output: options.output,
             theme,
+            redrawInput: () => readline?.prompt(true),
+            inputCursor: () => readline?.getCursorPos() ?? { rows: 0, cols: 0 },
+            onDisable: () => {
+              this.#disablePalette();
+              try {
+                readline?.prompt(true);
+              } catch {
+                // The palette is optional; a broken output must not escape.
+              }
+            },
             ...(options.columns === undefined
               ? {}
               : { fallbackColumns: options.columns }),
@@ -124,6 +135,7 @@ export class ReadlinePrompt implements Prompt {
       output: options.output,
       terminal: options.terminal,
     });
+    readline = this.#rl;
     this.#rl.on("line", (line) => {
       const pending = this.#pending;
       if (pending === null) {
@@ -217,9 +229,10 @@ export class ReadlinePrompt implements Prompt {
       return;
     }
     this.#suspended = false;
-    this.#rl.prompt(true);
     if (this.#presenter !== undefined && this.#completion.snapshot().active) {
       this.#presenter.resume(this.#completion.snapshot());
+    } else {
+      this.#rl.prompt(true);
     }
   }
 

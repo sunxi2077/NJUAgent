@@ -260,13 +260,21 @@ class FakeSlashMenuPresenter implements SlashMenuPresenterPort {
   resumeCalls = 0;
   closed = false;
   lastResumed: SlashCompletionSnapshot | undefined;
+  redrawInput: (() => void) | undefined;
+  onDisable: (() => void) | undefined;
+  disabled = false;
 
   render(snapshot: SlashCompletionSnapshot): void {
     this.renders.push(snapshot);
+    this.redrawInput?.();
   }
 
   clear(): void {
+    if (this.disabled) {
+      return;
+    }
     this.clearCalls += 1;
+    this.redrawInput?.();
   }
 
   suspend(): void {
@@ -276,10 +284,16 @@ class FakeSlashMenuPresenter implements SlashMenuPresenterPort {
   resume(snapshot: SlashCompletionSnapshot): void {
     this.resumeCalls += 1;
     this.lastResumed = snapshot;
+    this.redrawInput?.();
   }
 
   close(): void {
     this.closed = true;
+  }
+
+  disable(): void {
+    this.disabled = true;
+    this.onDisable?.();
   }
 }
 
@@ -296,7 +310,15 @@ function enhancedPrompt(options?: { delayWrites?: boolean }) {
     theme: createTheme({ enabled: true }),
     interfaceFactory: () => rl as unknown as Interface,
     inputRouterFactory: () => router,
-    menuPresenterFactory: () => presenter,
+    menuPresenterFactory: (options) => {
+      presenter.redrawInput = (options as typeof options & {
+        redrawInput?: () => void;
+      }).redrawInput;
+      presenter.onDisable = (options as typeof options & {
+        onDisable?: () => void;
+      }).onDisable;
+      return presenter;
+    },
   });
   return { prompt, rl, output, router, presenter };
 }
@@ -310,6 +332,42 @@ function pressKey(router: FakeInputRouter, name: string, sequence = ""): void {
 }
 
 describe("ReadlinePrompt slash palette", () => {
+  test("menu render and clear redraw the readline input at the live-region anchor", async () => {
+    const { prompt, rl, router } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    expect(rl.promptCalls).toHaveLength(1);
+
+    pressText(router, "/");
+    expect(rl.promptCalls).toHaveLength(2);
+    pressText(router, "g");
+    expect(rl.promptCalls).toHaveLength(3);
+    pressKey(router, "escape", "\x1b");
+    expect(rl.promptCalls).toHaveLength(4);
+
+    rl.emitLine("/g");
+    await pending;
+  });
+
+  test("a disabled presenter exits palette mode and later resumes plain readline", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    expect(router.handler).toBeDefined();
+
+    const beforeDisable = rl.promptCalls.length;
+    presenter.disable();
+    expect(router.handler).toBeUndefined();
+    expect(rl.promptCalls).toHaveLength(beforeDisable + 1);
+
+    const beforeResume = rl.promptCalls.length;
+    prompt.suspendForOutput();
+    prompt.resumeAfterOutput();
+    expect(rl.promptCalls).toHaveLength(beforeResume + 1);
+
+    rl.emitLine("/");
+    await pending;
+  });
+
   test("enhanced TTY wires the router as the readline input and opens on /", async () => {
     const { prompt, rl, router, presenter } = enhancedPrompt();
     const pending = prompt.read("› ", { slashCommands: COMMANDS });
