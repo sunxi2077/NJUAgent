@@ -207,4 +207,53 @@ describe("SlashCommandRouter", () => {
     await router.route("/goal clear", ctx);
     expect(cleared).toBe(true);
   });
+
+  describe("descriptors", () => {
+    test("returns only name, usage, and description in registration order", () => {
+      const router = new SlashCommandRouter();
+      router.register(fakeCommand("Help"));
+      router.register(fakeCommand("GOAL"));
+
+      const first = router.descriptors();
+
+      expect(first).toEqual([
+        { name: "help", usage: "/Help", description: "the Help command" },
+        { name: "goal", usage: "/GOAL", description: "the GOAL command" },
+      ]);
+      expect("execute" in first[0]!).toBe(false);
+      expect(first[0]).not.toHaveProperty("execute");
+    });
+
+    test("returns fresh arrays and objects on every call", () => {
+      const router = new SlashCommandRouter();
+      router.register(fakeCommand("help"));
+      const first = router.descriptors();
+      const second = router.descriptors();
+
+      expect(first).not.toBe(second);
+      expect(first[0]).not.toBe(second[0]);
+    });
+
+    test("callers cannot mutate the router's commands through descriptors", () => {
+      const router = new SlashCommandRouter();
+      router.register(fakeCommand("help"));
+      const descriptors = router.descriptors() as unknown as Array<{
+        name: string;
+        usage: string;
+        description: string;
+      }>;
+      descriptors[0]!.description = "mutated";
+      descriptors.push({ name: "injected", usage: "/injected", description: "injected" });
+
+      expect(router.commands()).toHaveLength(1);
+      expect(router.commands()[0]!.description).toBe("the help command");
+    });
+
+    test("commands() still returns the full commands for /help", () => {
+      const router = new SlashCommandRouter();
+      router.register(fakeCommand("help"));
+      expect(router.commands()).toHaveLength(1);
+      expect(router.commands()[0]!.execute).toBeTypeOf("function");
+    });
+  });
 });

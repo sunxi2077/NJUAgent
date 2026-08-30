@@ -1,4 +1,9 @@
-import type { CommandContext, RouteResult, SlashCommand } from "./command.js";
+import type {
+  CommandContext,
+  RouteResult,
+  SlashCommand,
+  SlashCommandDescriptor,
+} from "./command.js";
 
 /**
  * Parses one line of input into either ordinary agent text or a locally
@@ -18,6 +23,15 @@ export class SlashCommandRouter {
 
   commands(): SlashCommand[] {
     return [...this.#commands.values()];
+  }
+
+  /** Safe command metadata for the palette, in registration order. */
+  descriptors(): readonly SlashCommandDescriptor[] {
+    return [...this.#commands.entries()].map(([name, command]) => ({
+      name,
+      usage: command.usage,
+      description: command.description,
+    }));
   }
 
   async route(text: string, context: CommandContext): Promise<RouteResult> {

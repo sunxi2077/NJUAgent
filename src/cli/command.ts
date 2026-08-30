@@ -20,6 +20,11 @@ export interface SlashCommand {
   execute(args: string, context: CommandContext): Promise<CommandResult>;
 }
 
+/** Safe read-only command metadata for the slash palette; never exposes execute. */
+export type SlashCommandDescriptor = Readonly<
+  Pick<SlashCommand, "name" | "usage" | "description">
+>;
+
 /** Capabilities available to slash-command handlers. */
 export type CommandContext = {
   renderer: Renderer;
