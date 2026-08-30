@@ -477,15 +477,23 @@ const theme = createTheme({ enabled: interactive });
 `ReadlinePromptOptions` 增加：
 
 ```ts
-enhanced: boolean;
-theme: TerminalTheme;
+enhanced?: boolean;
+theme?: TerminalTheme;
 columns?: number;
 inputRouterFactory?: (source: NodeJS.ReadableStream) => TerminalInputRouterPort;
+menuPresenterFactory?: (
+  options: SlashMenuPresenterOptions,
+) => SlashMenuPresenterPort;
 ```
 
+`enhanced` 默认 false，`theme` 默认 disabled theme，以保持直接构造
+`ReadlinePrompt` 的测试与 composition seam 向后兼容；生产 Bootstrap 必须显式传入二者。
 生产 `columns` 从 stdout 获取；Presenter 在 resize 时读取最新 columns，初始值缺失时使用 80。
 
 `promptFactory` 和 `rendererFactory` 测试 seam 保留。
+`inputRouterFactory` 和 `menuPresenterFactory` 只用于隔离按键与 ANSI 生命周期测试；
+任一增强组件在 readline 创建前初始化失败时，应关闭已创建的部分组件并回退到
+真实 input 的普通 readline，而不是阻止 CLI 启动。
 
 ## 14. 与外部输出协调
 
