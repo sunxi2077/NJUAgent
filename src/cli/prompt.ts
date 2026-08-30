@@ -5,9 +5,22 @@ import {
   type Interface,
 } from "node:readline";
 
+import type { SlashCommandDescriptor } from "./command.js";
+import { SlashCompletionModel } from "./slash-completion.js";
+import { SlashMenuPresenter, type SlashMenuPresenterOptions, type SlashMenuPresenterPort } from "./slash-menu.js";
+import { TerminalInputRouter, type TerminalInputRouterPort, type TerminalKey, type TerminalKeyDecision } from "./terminal-input-router.js";
+import { createTheme, type TerminalTheme } from "./theme.js";
+
+export type PromptReadOptions = {
+  slashCommands?: readonly SlashCommandDescriptor[];
+};
+
 export interface Prompt {
   /** Reads one line of user input; resolves `null` on EOF or after `interrupt()`. */
-  read(promptText: string): Promise<string | null>;
+  read(
+    promptText: string,
+    options?: PromptReadOptions,
+  ): Promise<string | null>;
   /** Asks a yes/no question; resolves `false` when declined or interrupted. */
   confirm(question: string): Promise<boolean>;
   /** Registers the handler invoked on Ctrl-C (readline SIGINT or process SIGINT fallback). */
@@ -26,28 +39,88 @@ export type ReadlinePromptOptions = {
   input: NodeJS.ReadableStream;
   output: NodeJS.WritableStream;
   terminal: boolean;
+  /** Enable the slash palette (requires a real TTY). Defaults to false. */
+  enhanced?: boolean;
+  /** Theme used for palette styling; defaults to the disabled theme. */
+  theme?: TerminalTheme;
+  /** Initial terminal columns for the palette menu. */
+  columns?: number;
   /** Test seam: replaces the readline interface factory. */
   interfaceFactory?: typeof createInterface;
+  /** Test seam: replaces the keypress router factory. */
+  inputRouterFactory?: (
+    source: NodeJS.ReadableStream,
+  ) => TerminalInputRouterPort;
+  /** Test seam: replaces the menu presenter factory. */
+  menuPresenterFactory?: (
+    options: SlashMenuPresenterOptions,
+  ) => SlashMenuPresenterPort;
 };
+
+type SlashInputMode = "inactive" | "active";
+
+const LEGAL_SLASH_LINE = /^\/([a-z0-9-]*)$/u;
+const COMMAND_CHAR = /^[a-zA-Z0-9-]$/u;
 
 export class ReadlinePrompt implements Prompt {
   readonly #rl: Interface;
   readonly #output: NodeJS.WritableStream;
   readonly #installProcessSigint: boolean;
   readonly #terminal: boolean;
+  readonly #inputRouter: TerminalInputRouterPort | undefined;
+  readonly #presenter: SlashMenuPresenterPort | undefined;
+  readonly #completion: SlashCompletionModel;
+  #readOptions: PromptReadOptions | undefined;
   #pending: ((value: string | null) => void) | null = null;
   #sigintHandler: (() => void) | null = null;
   readonly #queuedLines: string[] = [];
   #suspended = false;
   #closed = false;
+  #slashMode: SlashInputMode = "inactive";
 
   constructor(options: ReadlinePromptOptions) {
     this.#output = options.output;
     this.#terminal = options.terminal;
     this.#installProcessSigint = !options.terminal;
+    const theme = options.theme ?? createTheme({ enabled: false });
+    this.#completion = new SlashCompletionModel();
+
+    const enhanced = options.enhanced === true && options.terminal;
+    if (enhanced) {
+      try {
+        const routerFactory = options.inputRouterFactory ??
+          ((source: NodeJS.ReadableStream) => new TerminalInputRouter(source));
+        const presenterFactory = options.menuPresenterFactory ??
+          ((presenterOptions: SlashMenuPresenterOptions) =>
+            new SlashMenuPresenter(presenterOptions));
+        this.#inputRouter = routerFactory(options.input);
+        try {
+          this.#presenter = presenterFactory({
+            output: options.output,
+            theme,
+            ...(options.columns === undefined
+              ? {}
+              : { fallbackColumns: options.columns }),
+          });
+        } catch (error) {
+          this.#inputRouter.close();
+          throw error;
+        }
+      } catch {
+        // The optional palette must never block the CLI: fall back to a plain
+        // readline over the real input.
+        this.#inputRouter = undefined;
+        this.#presenter = undefined;
+      }
+    } else {
+      this.#inputRouter = undefined;
+      this.#presenter = undefined;
+    }
+
     const factory = options.interfaceFactory ?? createInterface;
+    const readlineInput = this.#inputRouter?.readlineInput ?? options.input;
     this.#rl = factory({
-      input: options.input,
+      input: readlineInput,
       output: options.output,
       terminal: options.terminal,
     });
@@ -57,10 +130,12 @@ export class ReadlinePrompt implements Prompt {
         this.#queuedLines.push(line);
       } else {
         this.#pending = null;
+        this.#finishRead();
         pending(line);
       }
     });
     this.#rl.on("close", () => {
+      this.#finishRead();
       const pending = this.#pending;
       this.#pending = null;
       pending?.(null);
@@ -79,13 +154,22 @@ export class ReadlinePrompt implements Prompt {
     this.#sigintHandler?.();
   };
 
-  read(promptText: string): Promise<string | null> {
+  read(promptText: string, options?: PromptReadOptions): Promise<string | null> {
     if (this.#closed) {
       return Promise.resolve(null);
     }
     const queued = this.#queuedLines.shift();
     if (queued !== undefined) {
+      // A queued line resolves immediately; the palette is never shown.
       return Promise.resolve(queued);
+    }
+    this.#readOptions = options;
+    if (
+      this.#inputRouter !== undefined &&
+      options?.slashCommands !== undefined &&
+      options.slashCommands.length > 0
+    ) {
+      this.#inputRouter.setHandler((text, key) => this.#onKey(text, key));
     }
     this.#rl.setPrompt(promptText);
     this.#rl.prompt(true);
@@ -109,6 +193,10 @@ export class ReadlinePrompt implements Prompt {
   }
 
   interrupt(): void {
+    this.#presenter?.clear();
+    this.#completion.close();
+    this.#readOptions = undefined;
+    this.#inputRouter?.setHandler(undefined);
     const pending = this.#pending;
     this.#pending = null;
     pending?.(null);
@@ -118,6 +206,7 @@ export class ReadlinePrompt implements Prompt {
     if (!this.#terminal || this.#pending === null || this.#suspended) {
       return;
     }
+    this.#presenter?.suspend();
     clearLine(this.#output, 0);
     cursorTo(this.#output, 0);
     this.#suspended = true;
@@ -129,15 +218,178 @@ export class ReadlinePrompt implements Prompt {
     }
     this.#suspended = false;
     this.#rl.prompt(true);
+    if (this.#presenter !== undefined && this.#completion.snapshot().active) {
+      this.#presenter.resume(this.#completion.snapshot());
+    }
   }
 
   close(): void {
-    if (!this.#closed) {
-      this.#closed = true;
-      if (this.#installProcessSigint) {
-        process.off("SIGINT", this.#onProcessSigint);
-      }
-      this.#rl.close();
+    if (this.#closed) {
+      return;
     }
+    this.#closed = true;
+    this.#presenter?.close();
+    this.#inputRouter?.close();
+    if (this.#installProcessSigint) {
+      process.off("SIGINT", this.#onProcessSigint);
+    }
+    this.#rl.close();
+  }
+
+  #onKey(text: string, key: TerminalKey): TerminalKeyDecision {
+    try {
+      const active = this.#slashMode === "active";
+      const name = key.name;
+
+      // Ctrl-C / Ctrl-D always clear the menu and keep the existing semantics.
+      if (key.ctrl && (name === "c" || name === "d")) {
+        this.#closePalette();
+        return "forward";
+      }
+
+      if (!active) {
+        // A fresh "/" on an empty line opens the palette after readline
+        // updates its line.
+        if (text === "/" && this.#hasCommands()) {
+          queueMicrotask(() => this.#syncSlashState());
+        }
+        return "forward";
+      }
+
+      switch (name) {
+        case "up":
+          this.#completion.move(-1);
+          this.#renderMenu();
+          return "consume";
+        case "down":
+          this.#completion.move(1);
+          this.#renderMenu();
+          return "consume";
+        case "tab":
+          return this.#handleTab();
+        case "escape":
+          this.#closePalette();
+          return "consume";
+        case "return":
+        case "enter":
+          return this.#handleEnter();
+        case "backspace":
+          queueMicrotask(() => this.#syncSlashState());
+          return "forward";
+        default: {
+          if (COMMAND_CHAR.test(text)) {
+            // Keep filtering while the user types the command name.
+            queueMicrotask(() => this.#syncSlashState());
+            return "forward";
+          }
+          // Space, a second slash, editing keys, CJK, or anything unknown:
+          // close the palette and hand the key back to readline verbatim.
+          this.#closePalette();
+          return "forward";
+        }
+      }
+    } catch {
+      // A broken palette must never trap user input.
+      this.#disablePalette();
+      return "forward";
+    }
+  }
+
+  #handleTab(): TerminalKeyDecision {
+    const selected = this.#completion.selected();
+    if (selected === undefined) {
+      // Consume the tab so readline does not insert one, keep the menu open.
+      return "consume";
+    }
+    this.#replaceCurrentLine(`/${selected.name} `);
+    this.#closePalette();
+    return "consume";
+  }
+
+  #handleEnter(): TerminalKeyDecision {
+    const line = this.#currentLine();
+    const match = LEGAL_SLASH_LINE.exec(line);
+    const prefix = match?.[1] ?? "";
+    const commands = this.#readOptions?.slashCommands ?? [];
+    const exact = prefix !== "" && commands.some(
+      (command) => command.name.toLowerCase() === prefix.toLowerCase(),
+    );
+    if (exact) {
+      // The full command is typed: submit it to readline as-is.
+      this.#closePalette();
+      return "forward";
+    }
+    const selected = this.#completion.selected();
+    if (selected !== undefined && prefix !== "") {
+      // A prefix with a selection completes without submitting.
+      this.#replaceCurrentLine(`/${selected.name} `);
+      this.#closePalette();
+      return "consume";
+    }
+    // No match: submit the original input (the Router reports Unknown Command).
+    this.#closePalette();
+    return "forward";
+  }
+
+  #syncSlashState(): void {
+    if (this.#readOptions === undefined || !this.#hasCommands()) {
+      this.#closePalette();
+      return;
+    }
+    const line = this.#currentLine();
+    const cursor = this.#currentCursor();
+    const match = LEGAL_SLASH_LINE.exec(line);
+    if (match !== null && cursor === line.length) {
+      if (this.#slashMode !== "active") {
+        this.#slashMode = "active";
+        this.#completion.open(this.#readOptions.slashCommands!);
+      }
+      this.#completion.updatePrefix(match[1]!);
+      this.#renderMenu();
+      return;
+    }
+    this.#closePalette();
+  }
+
+  #renderMenu(): void {
+    this.#presenter?.render(this.#completion.snapshot());
+  }
+
+  #closePalette(): void {
+    if (this.#slashMode === "inactive" && !this.#completion.snapshot().active) {
+      return;
+    }
+    this.#presenter?.clear();
+    this.#completion.close();
+    this.#slashMode = "inactive";
+  }
+
+  #disablePalette(): void {
+    this.#closePalette();
+    this.#inputRouter?.setHandler(undefined);
+  }
+
+  #finishRead(): void {
+    this.#closePalette();
+    this.#readOptions = undefined;
+    this.#inputRouter?.setHandler(undefined);
+  }
+
+  #hasCommands(): boolean {
+    const commands = this.#readOptions?.slashCommands;
+    return commands !== undefined && commands.length > 0;
+  }
+
+  #replaceCurrentLine(text: string): void {
+    this.#rl.write(undefined, { ctrl: true, name: "u" });
+    this.#rl.write(text);
+  }
+
+  #currentLine(): string {
+    return (this.#rl as unknown as { line: string }).line;
+  }
+
+  #currentCursor(): number {
+    return (this.#rl as unknown as { cursor: number }).cursor;
   }
 }

@@ -1,14 +1,21 @@
 import { describe, expect, test } from "vitest";
 import type { Interface } from "node:readline";
+import { PassThrough } from "node:stream";
 
 import { ReadlinePrompt } from "../../../src/cli/prompt.js";
+import type { TerminalKey, TerminalKeyHandler, TerminalInputRouterPort } from "../../../src/cli/terminal-input-router.js";
+import type { SlashCompletionSnapshot } from "../../../src/cli/slash-completion.js";
+import type { SlashMenuPresenterPort } from "../../../src/cli/slash-menu.js";
+import type { SlashCommandDescriptor } from "../../../src/cli/command.js";
+import { createTheme } from "../../../src/cli/theme.js";
 
 class FakeReadline {
   promptText = "";
   promptCalls: boolean[] = [];
   readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
   closed = false;
-  line: string | undefined;
+  line = "";
+  cursor = 0;
 
   setPrompt(text: string): void {
     this.promptText = text;
@@ -29,11 +36,35 @@ class FakeReadline {
     this.closed = true;
   }
 
+  /** Simulates readline editing: ctrl-U clears, strings append, backspace deletes. */
+  write(data?: unknown, key?: { ctrl?: boolean; name?: string }): void {
+    if (data === undefined && key?.ctrl && key.name === "u") {
+      this.line = "";
+      this.cursor = 0;
+      return;
+    }
+    if (typeof data === "string") {
+      if (data === "\x7f" || data === "\b") {
+        this.line = this.line.slice(0, Math.max(0, this.cursor - 1)) + this.line.slice(this.cursor);
+        this.cursor = Math.max(0, this.cursor - 1);
+        return;
+      }
+      const before = this.line.slice(0, this.cursor);
+      const after = this.line.slice(this.cursor);
+      this.line = before + data + after;
+      this.cursor += [...data].length;
+    }
+  }
+
   emitLine(line: string): void {
-    this.line = line;
     for (const handler of this.handlers.get("line") ?? []) {
       handler(line);
     }
+  }
+
+  /** Emits the current line as Enter would. */
+  submitLine(): void {
+    this.emitLine(this.line);
   }
 }
 
@@ -100,7 +131,7 @@ describe("ReadlinePrompt", () => {
     prompt.resumeAfterOutput();
     expect(rl.promptCalls).toHaveLength(callsBefore + 1);
     expect(rl.promptCalls.at(-1)).toBe(true);
-    expect(rl.line).toBeUndefined();
+    expect(rl.line).toBe("");
 
     rl.emitLine("ok");
     await expect(pending).resolves.toBe("ok");
@@ -154,5 +185,376 @@ describe("ReadlinePrompt", () => {
     const interrupted = prompt.confirm("Continue?");
     prompt.interrupt();
     await expect(interrupted).resolves.toBe(false);
+  });
+});
+
+const COMMANDS: readonly SlashCommandDescriptor[] = [
+  { name: "help", usage: "/help", description: "Show available commands" },
+  { name: "goal", usage: "/goal [text]", description: "Manage the goal" },
+  { name: "status", usage: "/status", description: "Show session status" },
+];
+
+class FakeInputRouter implements TerminalInputRouterPort {
+  readonly readlineInput = new PassThrough();
+  handler: TerminalKeyHandler | undefined;
+  closed = false;
+
+  constructor(private readonly fakeReadline: FakeReadline) {}
+
+  setHandler(handler: TerminalKeyHandler | undefined): void {
+    this.handler = handler;
+  }
+
+  close(): void {
+    this.closed = true;
+    this.handler = undefined;
+  }
+
+  /** Feeds a key to the controller; forwards into the fake readline on forward. */
+  press(text: string, key: TerminalKey): void {
+    if (this.handler === undefined) {
+      this.fakeReadline.write(text);
+      return;
+    }
+    const decision = this.handler(text, key);
+    if (decision !== "forward") {
+      return;
+    }
+    if (key.name === "return" || key.name === "enter") {
+      this.fakeReadline.submitLine();
+    } else if (key.name === "backspace") {
+      this.fakeReadline.write("\x7f");
+    } else if (key.name === undefined) {
+      // Plain printable input appends; named editing keys are handled by
+      // readline itself and are not simulated here.
+      this.fakeReadline.write(text !== "" ? text : key.sequence);
+    }
+  }
+}
+
+class FakeSlashMenuPresenter implements SlashMenuPresenterPort {
+  readonly renders: SlashCompletionSnapshot[] = [];
+  clearCalls = 0;
+  suspendCalls = 0;
+  resumeCalls = 0;
+  closed = false;
+  lastResumed: SlashCompletionSnapshot | undefined;
+
+  render(snapshot: SlashCompletionSnapshot): void {
+    this.renders.push(snapshot);
+  }
+
+  clear(): void {
+    this.clearCalls += 1;
+  }
+
+  suspend(): void {
+    this.suspendCalls += 1;
+  }
+
+  resume(snapshot: SlashCompletionSnapshot): void {
+    this.resumeCalls += 1;
+    this.lastResumed = snapshot;
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
+function enhancedPrompt() {
+  const rl = new FakeReadline();
+  const output = new TTYStdout();
+  const router = new FakeInputRouter(rl);
+  const presenter = new FakeSlashMenuPresenter();
+  const prompt = new ReadlinePrompt({
+    input: process.stdin,
+    output: output as unknown as NodeJS.WritableStream,
+    terminal: true,
+    enhanced: true,
+    theme: createTheme({ enabled: true }),
+    interfaceFactory: () => rl as unknown as Interface,
+    inputRouterFactory: () => router,
+    menuPresenterFactory: () => presenter,
+  });
+  return { prompt, rl, output, router, presenter };
+}
+
+function pressText(router: FakeInputRouter, text: string): void {
+  router.press(text, { sequence: text, ctrl: false, meta: false, shift: false });
+}
+
+function pressKey(router: FakeInputRouter, name: string, sequence = ""): void {
+  router.press("", { sequence, name, ctrl: false, meta: false, shift: false });
+}
+
+describe("ReadlinePrompt slash palette", () => {
+  test("enhanced TTY wires the router as the readline input and opens on /", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    expect(rl.line).toBe("/");
+    expect(presenter.renders).toHaveLength(1);
+    expect(presenter.renders[0]!.active).toBe(true);
+    expect(presenter.renders[0]!.matches.map((match) => match.name)).toEqual([
+      "help",
+      "goal",
+      "status",
+    ]);
+    // Cleanup so the pending read does not leak.
+    rl.emitLine("/exit");
+    await pending;
+  });
+
+  test("typing a prefix filters and Enter completes without executing", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    for (const char of "go") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    expect(presenter.renders.at(-1)!.matches.map((match) => match.name)).toEqual(["goal"]);
+    pressKey(router, "return", "\r");
+    await Promise.resolve();
+    expect(rl.line).toBe("/goal ");
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    // Pending is not resolved by the completion.
+    let resolved = false;
+    void pending.then(() => { resolved = true; });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    rl.emitLine("/goal ");
+    await pending;
+  });
+
+  test("exact command Enter resolves the read", async () => {
+    const { prompt, rl, router } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    for (const char of "/help") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    pressKey(router, "return", "\r");
+    await expect(pending).resolves.toBe("/help");
+  });
+
+  test("Enter with no match resolves the original input", async () => {
+    const { prompt, rl, router } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    for (const char of "/zzz") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    pressKey(router, "return", "\r");
+    await expect(pending).resolves.toBe("/zzz");
+  });
+
+  test("Up/Down move the selection and are consumed", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    pressKey(router, "down", "\x1b[B");
+    pressKey(router, "down", "\x1b[B");
+    expect(presenter.renders.at(-1)!.selectedIndex).toBe(2);
+    expect(rl.line).toBe("/");
+    pressKey(router, "up", "\x1b[A");
+    expect(presenter.renders.at(-1)!.selectedIndex).toBe(1);
+    rl.emitLine("/");
+    await pending;
+  });
+
+  test("Tab completes the selected command with a trailing space", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    for (const char of "go") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    pressKey(router, "tab", "\t");
+    expect(rl.line).toBe("/goal ");
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    rl.emitLine("/goal ");
+    await pending;
+  });
+
+  test("Esc closes the palette and keeps the input", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    for (const char of "go") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    pressKey(router, "escape", "\x1b");
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    expect(rl.line).toBe("/go");
+    rl.emitLine("/go");
+    await pending;
+  });
+
+  test("Backspace to an empty line closes the palette", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    pressKey(router, "backspace", "\x7f");
+    await Promise.resolve();
+    expect(rl.line).toBe("");
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    rl.emitLine("");
+    await pending;
+  });
+
+  test("a second slash closes the palette and keeps the // escape", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    pressText(router, "/");
+    await Promise.resolve();
+    expect(rl.line).toBe("//");
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    rl.emitLine("//literal");
+    await pending;
+  });
+
+  test("a space closes the palette and CJK args flow to readline", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    for (const char of "/goal ") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    pressText(router, "完成测试");
+    expect(rl.line).toBe("/goal 完成测试");
+    rl.emitLine(rl.line);
+    await pending;
+  });
+
+  test("a pasted multi-character sequence keeps every character once", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/goal 完成测试");
+    await Promise.resolve();
+    expect(rl.line).toBe("/goal 完成测试");
+    expect(presenter.renders).toHaveLength(0);
+    rl.emitLine(rl.line);
+    await pending;
+  });
+
+  test("Left/Right and non-ASCII exit the palette and forward", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    for (const char of "go") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    pressKey(router, "left", "\x1b[D");
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    // A CJK char typed after exiting stays in the line.
+    pressText(router, "完");
+    expect(rl.line).toBe("/go完");
+    rl.emitLine(rl.line);
+    await pending;
+  });
+
+  test("Ctrl-C clears the palette and forwards to readline", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    for (const char of "go") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    router.press("", { sequence: "\x03", name: "c", ctrl: true, meta: false, shift: false });
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    // The forwarded Ctrl-C reaches readline; emulate its SIGINT handling.
+    rl.emitLine("/go");
+    await pending;
+  });
+
+  test("queued lines resolve without installing the palette handler", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const first = prompt.read("› ", { slashCommands: COMMANDS });
+    rl.emitLine("/help");
+    rl.emitLine("/status");
+    await first;
+    // The next read resolves from the queue without touching the router.
+    const second = prompt.read("› ", { slashCommands: COMMANDS });
+    await expect(second).resolves.toBe("/status");
+    expect(router.handler).toBeUndefined();
+    expect(presenter.renders).toHaveLength(0);
+  });
+
+  test("confirm never opens the palette", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.confirm("Continue?");
+    pressText(router, "/");
+    await Promise.resolve();
+    expect(presenter.renders).toHaveLength(0);
+    rl.emitLine("y");
+    await pending;
+  });
+
+  test("suspend clears the menu and resume redraws the active snapshot", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    for (const char of "go") {
+      pressText(router, char);
+      await Promise.resolve();
+    }
+    prompt.suspendForOutput();
+    expect(presenter.suspendCalls).toBe(1);
+    prompt.resumeAfterOutput();
+    expect(presenter.resumeCalls).toBe(1);
+    expect(presenter.lastResumed?.active).toBe(true);
+    rl.emitLine("/go");
+    await pending;
+  });
+
+  test("interrupt clears the palette and allows a later read", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/go");
+    await Promise.resolve();
+    prompt.interrupt();
+    await expect(pending).resolves.toBeNull();
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    expect(router.handler).toBeUndefined();
+    // A later read still works.
+    const again = prompt.read("› ", { slashCommands: COMMANDS });
+    rl.emitLine("/status");
+    await expect(again).resolves.toBe("/status");
+  });
+
+  test("close is idempotent and closes the router and presenter", async () => {
+    const { prompt, router, presenter } = enhancedPrompt();
+    prompt.close();
+    prompt.close();
+    expect(router.closed).toBe(true);
+    expect(presenter.closed).toBe(true);
+  });
+
+  test("no descriptors means no palette on /", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ");
+    pressText(router, "/");
+    await Promise.resolve();
+    expect(presenter.renders).toHaveLength(0);
+    rl.emitLine("/");
+    await pending;
   });
 });
