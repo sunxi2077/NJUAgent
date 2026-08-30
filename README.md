@@ -93,6 +93,22 @@ Input starting with `/` is handled locally and never reaches the model; use `//`
 /exit                        Save the current session and exit
 ```
 
+### Slash command palette
+
+On a real interactive TTY, typing `/` on an empty input line immediately shows a filterable command list under the prompt:
+
+- type an ASCII prefix (`go`, `sta`, …) to filter the candidates case-insensitively;
+- `↑` / `↓` move the selection (wrapping at the ends);
+- `Tab` (or `Enter` on a prefix) completes the selected command as `/<name> ` without executing it;
+- `Enter` on a fully typed command (`/help`) runs it directly, with no extra confirmation;
+- `Esc` closes the palette and keeps the current input; `Backspace` back to an empty line also closes it;
+- typing a space leaves command-name mode and hands the arguments back to normal readline editing, so Chinese parameters, IME, and pasted text behave exactly as before (`/goal 完成测试` keeps every character);
+- `//literal` still escapes to literal text; an unknown command still reports `Unknown command`;
+- parameter completion, fuzzy search, and mouse interaction are **not** part of this palette;
+- non-TTY, `NO_COLOR`, and `TERM=dumb` keep the plain input line with no dynamic menu or ANSI output.
+
+The command list comes only from the registered slash commands — there is no second hard-coded list.
+
 ### Sessions
 
 Each session is stored as one versioned JSON file under `$NJU_AGENT_HOME/sessions` (default `~/.nju-agent/sessions`), containing the complete valid message history, context checkpoint state, and run statistics. A new session starts on every launch (the welcome panel shows the most recent session with a `/resume` hint); the API Key is never persisted; a corrupt session file is reported as a warning without blocking the others. There is currently **no cross-session text search**.

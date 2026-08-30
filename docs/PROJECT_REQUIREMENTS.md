@@ -377,3 +377,20 @@ CLI
 - [x] 无工具 GoalEvaluator 与宿主 GoalPolicy（未完成计划/陈旧验证强制 incomplete）。
 - [x] StopGate + GoalController（最多 3 次自动继续；goal_verified / goal_incomplete / fail 映射）。
 - [x] 普通模式零回归（无 Goal 时无评估请求；非 TTY 无 ANSI；无密钥泄漏）。
+
+## 14. Slash Command Palette 验收状态
+
+> 依据 `docs/superpowers/specs/2026-08-30-slash-command-palette-design.md` 与
+> `docs/superpowers/plans/2026-08-30-slash-command-palette-implementation.md`。
+> 范围：真实增强 TTY 下 `/` 自动弹出、前缀过滤、方向键选择、Tab/前缀 Enter 补全。
+> 非目标：参数补全、模糊/拼音搜索、鼠标、多列布局、自定义编辑器、TUI 框架。
+
+- [x] `SlashCommandRouter.descriptors()` 只暴露 name/usage/description（注册顺序、防御性副本）。
+- [x] `SlashCompletionModel` 纯状态机（大小写不敏感前缀、≤6 候选、首尾循环、选中保持、防御性副本）。
+- [x] `formatSlashMenu` 完整单列边框（<40 列紧凑降级）+ `sanitizeTerminalText` 清理描述。
+- [x] `SlashMenuPresenter` 临时区域（save/restore cursor、suspend/resume、resize、close 清理）。
+- [x] `TerminalInputRouter` 独占 stdin→readline 字节通道（consume/forward、handler 抛错 fail-open、close 不关 stdin）。
+- [x] `ReadlinePrompt` Palette controller（决策表：Tab/Esc/方向键/前缀 Enter 消费，其余 fail-open；`//`、空格、中文、粘贴不丢字）。
+- [x] CliSession 主 read 传入最新 descriptors；Bootstrap 统一 enhanced/theme（Prompt 与 Renderer 同一主题）。
+- [x] 非 TTY / NO_COLOR / TERM=dumb 无动态菜单与 ANSI；普通输入与权限确认不触发 Palette。
+- [x] 跨组件集成与生命周期测试（12 场景）覆盖完整用户路径、失败开放、interrupt/close/EOF/resize 清理。
