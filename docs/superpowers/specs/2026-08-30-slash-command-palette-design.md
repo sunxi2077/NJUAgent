@@ -93,7 +93,7 @@
 
 - 使用 `command.name.toLowerCase().startsWith(prefix.toLowerCase())`；
 - 空前缀保持注册顺序；
-- 最多显示前 6 个匹配项；
+- 全部匹配项保留在 `matches`，菜单一次最多显示 6 行（滚动视窗），footer 显示窗口范围（如 `1–6 / 14`）；
 - 选择项移动后，只要它仍在新匹配集合中就保持选择；否则回到第一项；
 - 上下移动首尾循环；
 - 没有匹配时显示一行 `No matching commands`，不伪造候选。
@@ -358,14 +358,15 @@ Palette 不保存完整行；完整行仍以 `Interface.line` 为准。Controlle
 | active Enter，当前只是前缀且有 selected | 补全为 `/<name> `，关闭，不提交 | 否 |
 | active Enter，无 selected | 清除并提交原文 | 是 |
 | active Esc | 关闭并保留输入 | 否 |
-| active Backspace | forward 后同步；行将为空则关闭 | 是 |
+| active Backspace | 同步收缩 prefix；prefix 为空则关闭并 forward | 是 |
 | active 第二个 `/` | 关闭，保持 `//` 转义 | 是 |
 | active 空格 | 关闭，进入参数编辑 | 是 |
 | active 非 ASCII/编辑键/未知序列 | 关闭并交回 readline | 是 |
 | Ctrl-C/Ctrl-D | 先清除菜单，再交给 readline | 是 |
 | inactive 其他输入 | 不解释 | 是 |
 
-“forward 后同步”必须使用 `queueMicrotask()` 或等价的 after-forward hook，确保 readline 已经更新 `Interface.line`，不能根据猜测重复维护行缓冲区。
+Palette 同步维护自身受限 ASCII command prefix（不读取 readline line 判断逐键状态）；readline 仍是完整输入行的权威。清行替换只依赖可靠的可打印字符串插入，不依赖 programmatic 控制键写入。详细稳定化行为见
+[`docs/superpowers/specs/2026-08-30-slash-command-palette-stabilization-design.md`](./2026-08-30-slash-command-palette-stabilization-design.md)。
 
 ### 11.3 替换当前行
 

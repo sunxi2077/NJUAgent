@@ -97,8 +97,8 @@ Input starting with `/` is handled locally and never reaches the model; use `//`
 
 On a real interactive TTY, typing `/` on an empty input line immediately shows a filterable command list under the prompt:
 
-- type an ASCII prefix (`go`, `sta`, …) to filter the candidates case-insensitively;
-- `↑` / `↓` move the selection (wrapping at the ends);
+- type an ASCII prefix (`go`, `sta`, …) to filter the candidates case-insensitively, applied on every keypress;
+- `↑` / `↓` move the selection through **all** matches (wrapping at the ends); the menu shows a 6-row scrolling window with the current range in the footer (e.g. `1–6 / 14`);
 - `Tab` (or `Enter` on a prefix) completes the selected command as `/<name> ` without executing it;
 - `Enter` on a fully typed command (`/help`) runs it directly, with no extra confirmation;
 - `Esc` closes the palette and keeps the current input; `Backspace` back to an empty line also closes it;
