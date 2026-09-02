@@ -183,9 +183,10 @@ Design principles:
 - Commands run with the workspace as `cwd`, inside a **sanitized allowlisted environment**: model credentials and unrelated parent variables (such as `DATABASE_URL`) are never passed to child processes. Only documented runtime variables (`PATH`, `HOME`, locale, color and CI flags, and Windows system variables) are copied.
 - Commands have a timeout, support cancellation, and stream output through a per-call live display budget (`UI_OUTPUT_MAX_BYTES`) that is separate from the model-result budget (`TOOL_OUTPUT_MAX_BYTES`).
 - The balanced permission policy auto-allows reads, ordinary writes/edits, and a strict set of test/build/lint and read-only git commands; pipelines, redirection, home expansion, arbitrary runtimes, deletion, dependency install, network and destructive git operations require confirmation; privilege escalation, disk formatting and obvious outside-workspace targets are denied.
+- A conservative lexical command guard runs **before every permission mode**: home expansion (`~`, `$HOME`, `${HOME}`), absolute paths, `..` traversal, `cd`/`pushd`/`popd` escapes, `git -C`, command substitution/backticks, pipe-to-shell, `sudo`/`doas`, destructive system forms and remote Git pushes are hard-denied in `balanced`, `cautious`, and `trusted` alike — an approval prompt can never override them. This is defense in depth, not an OS-level isolation boundary.
 - A denied or cancelled tool still produces a structured tool result so the message history stays valid.
 
-This is a trusted local developer tool, **not an operating-system sandbox**: commands run with the permissions of your user account, and a project script you approve can still access any file your account can access (see the design doc for TOCTOU limitations).
+This is a trusted local developer tool, **not an operating-system sandbox**: commands run with the permissions of your user account, and a project script you approve can still access any file your account can access (see the design doc for TOCTOU limitations). The command guard blocks obvious escape attempts but makes no claim to be a kernel/container filesystem boundary.
 
 ## Testing
 

@@ -1,4 +1,5 @@
 import type { ToolExecutionRequest } from "../tools/tool.js";
+import { guardWorkspaceCommand } from "./command-guard.js";
 
 export type PermissionDecision =
   | { action: "allow" }
@@ -99,6 +100,12 @@ export class BalancedPermissionPolicy implements PermissionPolicy {
     }
     const command = commandText(request);
     if (command !== undefined) {
+      // The workspace guard runs before every other check: an obvious escape
+      // is a hard deny in every mode and can never be approved interactively.
+      const guarded = guardWorkspaceCommand(command);
+      if (guarded.action === "deny") {
+        return guarded;
+      }
       return classifyCommand(command);
     }
     return { action: "ask", reason: `Unrecognized tool requires confirmation: ${request.name}` };
@@ -115,6 +122,10 @@ export class CautiousPermissionPolicy implements PermissionPolicy {
     }
     const command = commandText(request);
     if (command !== undefined) {
+      const guarded = guardWorkspaceCommand(command);
+      if (guarded.action === "deny") {
+        return guarded;
+      }
       const balanced = classifyCommand(command);
       if (balanced.action === "deny") {
         return balanced;
