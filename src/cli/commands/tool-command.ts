@@ -1,15 +1,17 @@
 import type { CommandContext, SlashCommand } from "../command.js";
 import { formatCommandPanel, type CommandPanel } from "../command-layout.js";
 import { summarizeToolInput } from "../renderer.js";
-import { findToolActivity, type ToolActivity } from "../tool-activity.js";
-
-/** Prefix of a tool-call id shown when a prefix is ambiguous. */
-const AMBIGUOUS_ID_PREFIX_LENGTH = 8;
+import {
+  findToolActivity,
+  toolReference,
+  type ToolActivity,
+} from "../tool-activity.js";
 
 /**
  * Local inspector for retained tool output in the active session. Looks up a
- * finished tool call by full id or unique prefix and prints its metadata plus
- * the stored result body; never calls the model or a Tool.
+ * finished tool call by its stable `T-…` reference, full provider id, or a
+ * unique provider-id prefix and prints its metadata plus the stored result
+ * body; never calls the model or a Tool.
  */
 export function createToolCommand(): SlashCommand {
   return {
@@ -31,9 +33,7 @@ export function createToolCommand(): SlashCommand {
         case "ambiguous": {
           const lines = [`Multiple tool calls match "${prefix}":`];
           for (const candidate of match.matches) {
-            lines.push(
-              `  ${candidate.id.slice(0, AMBIGUOUS_ID_PREFIX_LENGTH)}  ${candidate.name}`,
-            );
+            lines.push(`  ${toolReference(candidate.id)}  ${candidate.name}`);
           }
           context.renderer.print(lines.join("\n"));
           break;
@@ -61,6 +61,7 @@ function renderToolActivity(activity: ToolActivity, context: CommandContext): vo
   if (context.display.enhanced) {
     const rows: Array<{ label: string; value: string }> = [
       { label: "Id", value: activity.id },
+      { label: "Reference", value: toolReference(activity.id) },
       ...(inputSummary === "" ? [] : [{ label: "Input", value: inputSummary }]),
       ...(outcome === undefined ? [] : [{ label: "Result", value: outcome }]),
     ];
@@ -77,6 +78,7 @@ function renderToolActivity(activity: ToolActivity, context: CommandContext): vo
     );
   } else {
     const lines = [`Tool ${activity.id} (${activity.name})`];
+    lines.push(`Reference: ${toolReference(activity.id)}`);
     if (inputSummary !== "") {
       lines.push(`Input: ${inputSummary}`);
     }

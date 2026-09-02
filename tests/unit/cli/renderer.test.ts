@@ -5,6 +5,7 @@ import type { AgentEvent } from "../../../src/agent/events.js";
 import type { RunResult } from "../../../src/agent/result.js";
 import { summarizeToolInput, TerminalRenderer } from "../../../src/cli/renderer.js";
 import { terminalWidth } from "../../../src/cli/terminal-text.js";
+import { toolReference } from "../../../src/cli/tool-activity.js";
 import type { ToolExecutionRequest } from "../../../src/tools/tool.js";
 
 class MemoryStdout {
@@ -334,7 +335,9 @@ describe("TerminalRenderer tool cards (TTY)", () => {
     expect(visible).toContain("│ stdout  Running tests...");
     expect(visible).toContain("│ stdout  ✓ 42 tests passed");
     expect(visible).toContain("│ stderr  warning: 1 deprecation");
-    expect(visible).toContain("… 1 more lines hidden · /tool c1a2b3c4");
+    expect(visible).toContain(
+      `… 1 more lines hidden · /tool ${toolReference("c1a2b3c4d5")}`,
+    );
     expect(visible).toContain("╰");
     expect(visible).toContain("╯");
     // Hidden lines and the full id never leak into the card.

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   Message,
   ToolCallBlock,
@@ -26,11 +28,27 @@ export type ToolPreview = {
 
 const DEFAULT_PREVIEW_MAX_LINES = 3;
 const DEFAULT_PREVIEW_MAX_CODE_POINTS = 360;
+const REFERENCE_PREFIX_PATTERN = /^t-/iu;
 
 /**
- * Finds a tool call/result pair in a session transcript by id prefix. Pure:
- * reads messages only, never mutates anything. Provider ids are opaque, so
- * prefix matching is case-sensitive.
+ * Stable, display-safe short reference for a provider tool id. Provider ids
+ * are opaque and often share a visible prefix (Anthropic-style ids all begin
+ * `call_00_`), so a hint must not be derived from the id's first characters.
+ * The reference is `T-` plus the first 10 lowercase hex characters of the
+ * SHA-256 digest of the full id; identical ids always produce the same
+ * reference and distinct ids virtually never collide.
+ */
+export function toolReference(id: string): string {
+  const digest = createHash("sha256").update(id).digest("hex");
+  return `T-${digest.slice(0, 10)}`;
+}
+
+/**
+ * Finds a tool call/result pair in a session transcript. Accepts either (a) a
+ * provider-id prefix — matched case-sensitively as before — or (b) a `T-`
+ * reference prefix, which is matched case-insensitively against
+ * {@link toolReference}. A full provider id that matches exactly always wins
+ * first. Pure: reads messages only, never mutates anything.
  */
 export function findToolActivity(
   messages: readonly Message[],
@@ -54,8 +72,25 @@ export function findToolActivity(
     }
   }
 
+  const exact = calls.filter((call) => call.id === prefix);
+  if (exact.length === 1) {
+    return foundActivity(exact[0]!, resultsByCallId);
+  }
+
+  const isReference = REFERENCE_PREFIX_PATTERN.test(prefix);
+  const normalizedPrefix = prefix.toLowerCase();
   const matches = calls
-    .filter((call) => call.id.startsWith(prefix))
+    .filter((call) => {
+      if (call.id.startsWith(prefix)) {
+        return true;
+      }
+      if (isReference) {
+        return toolReference(call.id)
+          .toLowerCase()
+          .startsWith(normalizedPrefix);
+      }
+      return false;
+    })
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   if (matches.length === 0) {
@@ -67,7 +102,13 @@ export function findToolActivity(
       matches: matches.map((call) => ({ id: call.id, name: call.name })),
     };
   }
-  const call = matches[0]!;
+  return foundActivity(matches[0]!, resultsByCallId);
+}
+
+function foundActivity(
+  call: ToolCallBlock,
+  resultsByCallId: Map<string, ToolResultBlock>,
+): ToolActivityMatch {
   const result = resultsByCallId.get(call.id);
   return {
     kind: "found",

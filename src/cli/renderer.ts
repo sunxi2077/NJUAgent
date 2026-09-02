@@ -8,7 +8,7 @@ import type { AgentEvent } from "../agent/events.js";
 import type { RunResult } from "../agent/result.js";
 import type { ToolExecutionRequest, ToolOutputStream } from "../tools/tool.js";
 import { LiveOutputLimiter } from "./output-limiter.js";
-import { makeToolPreview } from "./tool-activity.js";
+import { makeToolPreview, toolReference } from "./tool-activity.js";
 import type { Prompt } from "./prompt.js";
 
 export interface Renderer {
@@ -48,8 +48,6 @@ const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", 
 const DEFAULT_MAX_LIVE_OUTPUT_BYTES = 65_536;
 const MAX_PERMISSION_SUMMARY_CODE_POINTS = 100;
 const PERMISSION_LABEL_WIDTH = 8;
-/** Prefix length of a tool-call id used by the `/tool <id-prefix>` hint. */
-const TOOL_HINT_ID_PREFIX_LENGTH = 8;
 
 /**
  * Bounded stdout/stderr retained for one in-flight tool call so the finished
@@ -474,7 +472,7 @@ export class TerminalRenderer implements Renderer {
     if (preview.hiddenLineCount > 0) {
       rows.push(
         this.#theme.muted(
-          `… ${preview.hiddenLineCount} more lines hidden · /tool ${id.slice(0, TOOL_HINT_ID_PREFIX_LENGTH)}`,
+          `… ${preview.hiddenLineCount} more lines hidden · /tool ${toolReference(id)}`,
         ),
       );
     }

@@ -5,6 +5,7 @@ import type { CommandContext } from "../../../../src/cli/command.js";
 import { createToolCommand } from "../../../../src/cli/commands/tool-command.js";
 import type { Renderer } from "../../../../src/cli/renderer.js";
 import { createTheme } from "../../../../src/cli/theme.js";
+import { toolReference } from "../../../../src/cli/tool-activity.js";
 import type { Message } from "../../../../src/agent/messages.js";
 import {
   createEmptySession,
@@ -137,16 +138,38 @@ describe("createToolCommand", () => {
     expect(renderer.printed).toEqual(["Usage: /tool <id>"]);
   });
 
-  test("a unique prefix prints name, full id, input summary, and the stored result", async () => {
+  test("a unique prefix prints name, full id, reference, input summary, and the stored result", async () => {
     const { context, renderer } = makeContext({ messages: callAndResult() });
     const result = await command.execute("call-abc", context);
     expect(result).toEqual({ kind: "continue", stateChanged: false });
     expect(renderer.errors).toEqual([]);
     const text = renderer.printed.join("\n");
     expect(text).toContain("Tool call-abc123def456 (run_command)");
+    expect(text).toContain(`Reference: ${toolReference("call-abc123def456")}`);
     expect(text).toContain("Input: npm test");
     expect(text).toContain("Stored result:");
     expect(text).toContain("✓ 42 tests passed");
+  });
+
+  test("a T- reference resolves the same tool call", async () => {
+    const { context, renderer } = makeContext({ messages: callAndResult() });
+    const result = await command.execute(
+      toolReference("call-abc123def456"),
+      context,
+    );
+    expect(result).toEqual({ kind: "continue", stateChanged: false });
+    const text = renderer.printed.join("\n");
+    expect(text).toContain("Tool call-abc123def456 (run_command)");
+    expect(text).toContain("Stored result:");
+    expect(text).toContain("✓ 42 tests passed");
+  });
+
+  test("a lowercase T- reference still resolves", async () => {
+    const { context, renderer } = makeContext({ messages: callAndResult() });
+    const reference = toolReference("call-abc123def456").toLowerCase();
+    await command.execute(reference, context);
+    const text = renderer.printed.join("\n");
+    expect(text).toContain("Tool call-abc123def456 (run_command)");
   });
 
   test("a found call without a stored result still shows the call details", async () => {
@@ -213,8 +236,13 @@ describe("createToolCommand", () => {
     expect(result).toEqual({ kind: "continue", stateChanged: false });
     const text = renderer.printed.join("\n");
     expect(text).toContain('Multiple tool calls match "c1a2":');
-    expect(text).toContain("c1a2b3c4  run_command");
-    expect(text).toContain("c1a2dead  read_file");
+    const referenceRows = [
+      `${toolReference("c1a2b3c4d5e6f7")}  run_command`,
+      `${toolReference("c1a2deadbeef00")}  read_file`,
+    ];
+    for (const row of referenceRows) {
+      expect(text).toContain(row);
+    }
     // Never picks one arbitrarily or prints stored output.
     expect(text).not.toContain("Stored result:");
     expect(text).not.toContain("npm test");
@@ -230,6 +258,7 @@ describe("createToolCommand", () => {
     const visible = stripVTControlCharacters(renderer.printed.join("\n"));
     expect(visible).toContain("╭─ ⚙ run_command");
     expect(visible).toContain("call-abc123def456");
+    expect(visible).toContain(toolReference("call-abc123def456"));
     expect(visible).toMatch(/Input\s+npm test/u);
     expect(visible).toContain("Stored result:");
     expect(visible).toContain("✓ 42 tests passed");

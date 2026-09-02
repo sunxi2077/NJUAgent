@@ -88,7 +88,7 @@ Input starting with `/` is handled locally and never reaches the model; use `//`
 /resume <id>                 Resume a saved session (full UUID or unique prefix)
 /new                         Start a new session
 /history [1-100]             Show recent messages
-/tool <id>                   Show retained output for a tool call (full id or unique prefix)
+/tool <id>                   Show retained output for a tool call (T- reference, full id, or unique prefix)
 /context                     Show context budget and checkpoint status
 /compact [focus]             Summarize the covered conversation
 /plan [clear]                Show or clear the model-maintained execution plan
@@ -147,7 +147,7 @@ NJUAgent downloads only that `SKILL.md`, saves it as `<workspace>/.nju-agent/ski
 - **Sessions**: `/sessions` lists the 12 most recent sessions by default; `/sessions all` shows every session. Long lists show a `… showing N of M · /sessions all` hint.
 - **Cost estimate caveats**: when both `MODEL_INPUT_COST_PER_MTOKENS` and `MODEL_OUTPUT_COST_PER_MTOKENS` are set, `/status` shows an **estimate** based only on provider-reported tokens captured by the client. It does not model provider-specific cache discounts, promotions, taxes, or external usage, and it never writes pricing into the user config.
 - **Web search**: with `TAVILY_API_KEY` set, `web_search` becomes available and every call requires your approval because the query is sent to an external service. Results are returned as untrusted reference material inside `<untrusted_web_results>`; they cannot trigger commands or override permission rules. Queries must never contain credentials or private source code.
-- **Tool cards**: while a tool runs, nothing is printed; when it finishes the renderer emits **one compact card** with the tool name, outcome, duration, the input summary and up to three preview lines (stderr in error colour). Omitted output is summarized as `… N more lines hidden · /tool <id-prefix>`, and `/tool <full-id-or-unique-prefix>` prints the retained full result from the session transcript. Non-TTY output stays stable `[stdout]`/`[stderr]` records.
+- **Tool cards**: while a tool runs, nothing is printed; when it finishes the renderer emits **one compact card** with the tool name, outcome, duration, the input summary and up to three preview lines (stderr in error colour). Omitted output is summarized as `… N more lines hidden · /tool <T-reference>`. Each card hint is a stable `T-<10-hex>` reference derived from the full provider id (never its ambiguous first characters), and `/tool <T-reference>` (or a full/unique provider-id prefix) prints the retained full result, which also shows the `Reference` and full `Id`. Non-TTY output stays stable `[stdout]`/`[stderr]` records.
 - There is **no automatic Git rollback**: NJUAgent never resets, restores, stashes, or commits on its own.
 
 ## Architecture

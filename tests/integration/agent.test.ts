@@ -34,6 +34,7 @@ import {
   createWriteFileTool,
 } from "../../src/tools/file-tools.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
+import { toolReference } from "../../src/cli/tool-activity.js";
 import {
   createListFilesTool,
   createSearchTextTool,
@@ -443,14 +444,18 @@ describe("tool card and /tool inspector end-to-end", () => {
       // Exactly one compact card; hidden lines never stream to the transcript.
       expect(visible).toContain("╭─ ⚙ run_command · succeeded");
       expect(visible).toContain("│ stdout  1");
-      expect(visible).toContain("… 2 more lines hidden · /tool tool1234");
+      expect(visible).toContain(`… 2 more lines hidden · /tool ${toolReference(callId)}`);
       expect(visible).not.toContain("│ stdout  4");
       expect(visible).not.toContain("│ stdout  5");
 
-      // /tool with the card's 8-character prefix prints the retained result.
-      const printed = await runToolCommand(history.snapshot(), "tool1234");
+      // /tool with the card's stable T- reference prints the retained result.
+      const printed = await runToolCommand(
+        history.snapshot(),
+        toolReference(callId),
+      );
       const text = printed.join("\n");
       expect(text).toContain(`Tool ${callId} (run_command)`);
+      expect(text).toContain(`Reference: ${toolReference(callId)}`);
       expect(text).toContain("Stored result:");
       expect(text).toContain("stdout:\n1\n2\n3\n4\n5");
     },
