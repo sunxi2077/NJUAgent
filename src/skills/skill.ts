@@ -58,6 +58,7 @@ export function parseSkillFile(input: {
 
   let name: string | undefined;
   let description: string | undefined;
+  let license: string | undefined;
   for (const line of frontmatter) {
     if (line.trim() === "") {
       continue;
@@ -81,6 +82,17 @@ export function parseSkillFile(input: {
         throw invalidSkill(directoryName, "duplicate description field");
       }
       description = value;
+    } else if (key === "license") {
+      // Official Skills carry `license` as documentation-only metadata. It is
+      // permitted once, must be a non-empty single-line value, and is never
+      // injected into the active skill instructions.
+      if (license !== undefined) {
+        throw invalidSkill(directoryName, "duplicate license field");
+      }
+      if (value === "") {
+        throw invalidSkill(directoryName, "blank license field");
+      }
+      license = value;
     } else {
       throw invalidSkill(directoryName, `unknown field: ${key}`);
     }

@@ -105,4 +105,52 @@ describe("parseSkillFile", () => {
     }
     expect(error).toMatchObject({ code: "SKILL_INVALID" });
   });
+
+  test("accepts an official frontmatter with an optional license field", () => {
+    const text = `---
+name: frontend-design
+description: Guidance for distinctive, intentional visual design.
+license: Complete terms in LICENSE.txt
+---
+
+Follow the design system.
+`;
+    const skill = parse({
+      text,
+      byteLength: Buffer.byteLength(text, "utf8"),
+      directoryName: "frontend-design",
+      filePath: "/root/frontend-design/SKILL.md",
+    });
+    expect(skill.name).toBe("frontend-design");
+    expect(skill.description).toBe("Guidance for distinctive, intentional visual design.");
+    // license is metadata only and is never part of the instructions.
+    expect(skill.instructions).toBe("Follow the design system.");
+    expect(skill.instructions).not.toContain("license");
+  });
+
+  test("an unknown field still throws with the field named", () => {
+    const text = "---\nname: test-first\ndescription: d\nversion: 2\n---\nbody\n";
+    let error: unknown;
+    try {
+      parse({ text });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: "SKILL_INVALID" });
+    expect(String(error)).toContain("unknown field: version");
+  });
+
+  test.each([
+    ["blank license", "license:  \n"],
+    ["duplicate license", "license: MIT\nlicense: Apache-2.0\n"],
+  ])("rejects %s", (_label, licenseLines) => {
+    const text = `---\nname: test-first\ndescription: d\n${licenseLines}---\nbody\n`;
+    let error: unknown;
+    try {
+      parse({ text });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: "SKILL_INVALID" });
+  });
 });
