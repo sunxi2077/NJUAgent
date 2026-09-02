@@ -324,6 +324,12 @@ export class TerminalRenderer implements Renderer {
         ? this.#theme.success(`✓ Allowed ${call.name} once`)
         : this.#theme.error(`✗ Denied ${call.name}`);
       this.#permanent(label);
+      // Approval must not leave a silent gap: restore a visible running
+      // status immediately and keep it until tool_completed replaces it with
+      // the compact result card. A denial never claims the tool is running.
+      this.#status(
+        approved ? `${call.name} running… Ctrl-C cancels` : "",
+      );
       return;
     }
     this.#write(`[permission] decision=${approved ? "allowed" : "denied"}\n`);

@@ -812,6 +812,42 @@ describe("TerminalRenderer permission prompts", () => {
     expect(deniedOut.text()).toContain("\x1b[31m");
   });
 
+  test("TTY approval restores a visible running status immediately", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "tool_started",
+      id: "c1",
+      name: "run_command",
+      summary: '{"command":"npm test"}',
+    });
+    renderer.permissionRequest(toolCall, reason);
+    renderer.permissionDecision(toolCall, true);
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("✓ Allowed run_command once");
+    expect(visible).toContain("run_command running… Ctrl-C cancels");
+    // The running status appears after the approval record, never before it.
+    expect(visible.indexOf("Allowed")).toBeLessThan(
+      visible.indexOf("running… Ctrl-C cancels"),
+    );
+  });
+
+  test("TTY denial does not restore a running status", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "tool_started",
+      id: "c1",
+      name: "run_command",
+      summary: '{"command":"npm test"}',
+    });
+    renderer.permissionRequest(toolCall, reason);
+    renderer.permissionDecision(toolCall, false);
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("✗ Denied run_command");
+    expect(visible).not.toContain("running… Ctrl-C cancels");
+  });
+
   test("non-TTY permissionRequest and decision emit stable [permission] records", () => {
     const stdout = new MemoryStdout();
     const renderer = plainRenderer(stdout);
