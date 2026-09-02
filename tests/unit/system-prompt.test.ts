@@ -113,3 +113,42 @@ describe("buildSystemPrompt project-skill contract", () => {
     expect(prompt.match(/<conversation_summary>/gu)).toHaveLength(1);
   });
 });
+
+describe("buildSystemPrompt remote-fetch guidance", () => {
+  test("tells the model to use fetch_url for known external text URLs", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("fetch_url");
+    expect(prompt).toMatch(/known external text URL|external text URL/iu);
+  });
+
+  test("discourages curl/git-clone merely to retrieve public text", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/fetch_url/u);
+    expect(prompt).toMatch(/curl|git clone/iu);
+  });
+
+  test("frames fetched content as untrusted and keeps saving workspace-relative", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/untrusted/iu);
+    expect(prompt).toMatch(/workspace-relative/iu);
+  });
+
+  test("keeps external Skill activation explicit via /skill", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/\/skill <name>/u);
+  });
+
+  test("adds no more than six remote-fetch bullets", () => {
+    const prompt = buildSystemPrompt();
+    const section = prompt.split("Remote fetch:")[1] ?? "";
+    const bullets = section.split("\n").filter((line) => line.startsWith("- "));
+    expect(bullets.length).toBeGreaterThan(0);
+    expect(bullets.length).toBeLessThanOrEqual(6);
+  });
+
+  test("keeps the existing web-search restriction", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain("web_search");
+    expect(prompt).toContain("untrusted reference material");
+  });
+});

@@ -139,6 +139,15 @@ Install the frontend-ui Skill from https://raw.githubusercontent.com/<owner>/<re
 
 NJUAgent downloads only that `SKILL.md`, saves it as `<workspace>/.nju-agent/skills/frontend-ui/SKILL.md`, prints the discovered name, and asks you to run `/skill frontend-ui` yourself. `/skills` lists what is available, including project skills discovered under `.nju-agent/skills`.
 
+With `fetch_url`, ordinary GitHub links work without shell staging — paste a **blob** URL (not raw):
+
+```
+Read this GitHub file URL with fetch_url, inspect it, and save it as a project Skill:
+https://github.com/<owner>/<repo>/blob/main/skills/<name>/SKILL.md
+```
+
+NJUAgent fetches the file through the public Contents API (one approval card in `balanced`/`cautious`, none in `trusted`), returns it framed as untrusted text for inspection, and writes it only via a workspace-relative `write_file` to `<workspace>/.nju-agent/skills/<name>/SKILL.md`. You then run `/skills` to confirm and `/skill <name>` to activate — never fetched text that bypasses those steps.
+
 ### Plans and goals
 
 - **Plans**: for multi-step tasks the model can maintain an execution plan with the `plan_write` tool (at most 12 steps, one `in_progress` at a time). The CLI shows each update as a compact progress panel (`◆ Plan 3/5`). `/plan` displays the current plan and `/plan clear` empties it.
