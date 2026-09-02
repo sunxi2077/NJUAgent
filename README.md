@@ -37,6 +37,8 @@ On first run (TTY only), missing Base URL or Model triggers an interactive setup
 | `TAVILY_API_KEY` | no | — | enables the permission-gated `web_search` tool |
 | `WEB_SEARCH_TIMEOUT_MS` | no | `15000` | web search request timeout |
 | `WEB_SEARCH_MAX_CONTENT_CHARS` | no | `6000` | per-result content cap for `web_search` |
+| `MODEL_INPUT_COST_PER_MTOKENS` | no | — | optional USD price per million input tokens (set with the output price) |
+| `MODEL_OUTPUT_COST_PER_MTOKENS` | no | — | optional USD price per million output tokens (set with the input price) |
 
 `*` Base URL and Model may come from the persisted config instead of the environment (saved by setup); the API Key always comes from the environment.
 
@@ -77,8 +79,8 @@ Non-TTY output (pipes, CI) degrades automatically to plain newline-safe records 
 Input starting with `/` is handled locally and never reaches the model; use `//` to send literal text starting with a slash:
 
 ```
-/help                        Show available commands
-/status                      Show current session status
+/help                        Show available commands (grouped)
+/status                      Show the session dashboard (context bar + usage)
 /sessions                    List saved sessions
 /resume <id>                 Resume a saved session (full UUID or unique prefix)
 /new                         Start a new session
@@ -127,7 +129,10 @@ A Skill is **plain prompt text**, not executable code: one `SKILL.md` per direct
 - **Goals**: `/goal <completion condition>` enables explicit completion verification. The next ordinary message runs under that goal: when the worker would stop, a no-tools model call checks the condition against the current Plan and Evidence, and the host refuses `satisfied` unless the plan is finished and every workspace edit is followed by a fresh successful verification command (`npm test`, `npm run build|lint|typecheck|check`, `vitest`, `pytest`, `tsc`, `cargo test|check|build`, `go test`, …).
 - A goal triggers at most **3 automatic continuations** per user message; if the 4th check is still not satisfied the run ends `goal_incomplete` and the goal stays active. `verified` and `cancelled` goals stop the checks until you set a new one. `/goal` and `/goal clear` view and remove it.
 - Evidence observes only the tools NJUAgent itself runs: writes/edits bump a workspace revision, and commands are recorded with exit code, timeout, cancellation and revision. If you edit files in another terminal, those edits do **not** count as workspace changes (and cannot invalidate verification).
-- Web search: with `TAVILY_API_KEY` set, `web_search` becomes available and every call requires your approval because the query is sent to an external service. Results are returned as untrusted reference material inside `<untrusted_web_results>`; they cannot trigger commands or override permission rules. Queries must never contain credentials or private source code.
+- **Status dashboard**: `/status` shows session identity, a width-safe context pressure bar (against the hard input limit, colored by load), cumulative per-session request/input/output token totals, and a token-cost `Estimate` when pricing is configured. `/context` stays the focused detailed context view.
+- **Sessions**: `/sessions` lists the 12 most recent sessions by default; `/sessions all` shows every session. Long lists show a `… showing N of M · /sessions all` hint.
+- **Cost estimate caveats**: when both `MODEL_INPUT_COST_PER_MTOKENS` and `MODEL_OUTPUT_COST_PER_MTOKENS` are set, `/status` shows an **estimate** based only on provider-reported tokens captured by the client. It does not model provider-specific cache discounts, promotions, taxes, or external usage, and it never writes pricing into the user config.
+- **Web search**: with `TAVILY_API_KEY` set, `web_search` becomes available and every call requires your approval because the query is sent to an external service. Results are returned as untrusted reference material inside `<untrusted_web_results>`; they cannot trigger commands or override permission rules. Queries must never contain credentials or private source code.
 - There is **no automatic Git rollback**: NJUAgent never resets, restores, stashes, or commits on its own.
 
 ## Architecture
