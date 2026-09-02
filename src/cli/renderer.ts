@@ -8,6 +8,7 @@ import type { AgentEvent } from "../agent/events.js";
 import type { RunResult } from "../agent/result.js";
 import type { ToolExecutionRequest, ToolOutputStream } from "../tools/tool.js";
 import { LiveOutputLimiter } from "./output-limiter.js";
+import { makeToolPreview } from "./tool-activity.js";
 import type { Prompt } from "./prompt.js";
 
 export interface Renderer {
@@ -47,6 +48,20 @@ const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", 
 const DEFAULT_MAX_LIVE_OUTPUT_BYTES = 65_536;
 const MAX_PERMISSION_SUMMARY_CODE_POINTS = 100;
 const PERMISSION_LABEL_WIDTH = 8;
+/** Prefix length of a tool-call id used by the `/tool <id-prefix>` hint. */
+const TOOL_HINT_ID_PREFIX_LENGTH = 8;
+
+/**
+ * Bounded stdout/stderr retained for one in-flight tool call so the finished
+ * interactive card can show a preview without re-streaming output.
+ */
+type ToolCardBuffer = {
+  name: string;
+  /** Concise human-readable input summary captured at tool start. */
+  summary: string;
+  stdout: string;
+  stderr: string;
+};
 
 /** Bounds one text run to a single line of at most 100 code points. */
 function oneLineBounded(text: string): string {
@@ -126,6 +141,8 @@ export class TerminalRenderer implements Renderer {
   #modelLineOpen = false;
   /** Partial plain-mode model line waiting for a newline or completion. */
   #plainModelBuffer = "";
+  /** Bounded per-call output retained for interactive tool cards. */
+  readonly #toolBuffers = new Map<string, ToolCardBuffer>();
   #spinnerIndex = 0;
 
   constructor(options: TerminalRendererOptions) {
@@ -196,10 +213,12 @@ export class TerminalRenderer implements Renderer {
       case "tool_started":
         this.#flushModelText();
         if (this.#interactive) {
-          const summary = conciseToolSummary(event.summary);
-          this.#permanent(
-            `${this.#theme.brandStrong("⚙")} ${event.name}${summary === "" ? "" : ` · ${summary}`}`,
-          );
+          this.#toolBuffers.set(event.id, {
+            name: event.name,
+            summary: conciseToolSummary(event.summary),
+            stdout: "",
+            stderr: "",
+          });
           this.#status(`${event.name}…`);
         } else {
           this.#write(`[tool] ${event.name} started (${event.id}): ${event.summary}\n`);
@@ -208,9 +227,15 @@ export class TerminalRenderer implements Renderer {
       case "tool_completed":
         this.#liveOutputLimiter.finish(event.id);
         if (this.#interactive) {
-          const mark = event.ok ? this.#theme.success("✓") : this.#theme.error("✗");
-          const name = event.ok ? event.name : this.#theme.error(event.name);
-          this.#permanent(`  ${mark} ${name} · ${duration(event.durationMs)}`);
+          this.#flushModelText();
+          const buffer = this.#toolBuffers.get(event.id) ?? {
+            name: event.name,
+            summary: "",
+            stdout: "",
+            stderr: "",
+          };
+          this.#toolBuffers.delete(event.id);
+          this.#permanent(this.#toolCard(buffer, event.id, event.ok, event.durationMs));
           this.#status("");
         } else {
           const outcome = event.ok ? "ok" : "failed";
@@ -249,27 +274,31 @@ export class TerminalRenderer implements Renderer {
       return;
     }
     const limited = this.#liveOutputLimiter.consume(call.id, text);
-    if (limited.suppressionStarted) {
-      const message = `[output] live output suppressed after ${this.#liveOutputLimit} bytes`;
-      if (this.#interactive) {
-        this.#permanent(this.#theme.muted(message));
-      } else {
-        this.#write(`${message}\n`);
+    if (!this.#interactive) {
+      if (limited.suppressionStarted) {
+        this.#write(`[output] live output suppressed after ${this.#liveOutputLimit} bytes\n`);
       }
+      if (limited.text.length === 0) {
+        return;
+      }
+      this.#plainLines(`[${stream}]`, limited.text);
+      return;
     }
+    // Interactive mode: nothing becomes permanent while the tool runs. The
+    // bounded text is kept for the compact card rendered on completion; if no
+    // start was seen (e.g. a mid-run attach) there is no card to fill.
     if (limited.text.length === 0) {
       return;
     }
-    if (this.#interactive) {
-      for (const line of limited.text.split("\n")) {
-        if (line !== "") {
-          const content = stream === "stderr" ? this.#theme.error(line) : line;
-          this.#permanent(`  │ ${content}`);
-        }
-      }
+    const buffer = this.#toolBuffers.get(call.id);
+    if (buffer === undefined) {
       return;
     }
-    this.#plainLines(`[${stream}]`, limited.text);
+    if (stream === "stderr") {
+      buffer.stderr += limited.text;
+    } else {
+      buffer.stdout += limited.text;
+    }
   }
 
   print(text: string): void {
@@ -397,6 +426,70 @@ export class TerminalRenderer implements Renderer {
       case "internal_failed":
         return this.#theme.error;
     }
+  }
+
+  /**
+   * Builds the interactive card for a finished tool call. Tools with visible
+   * output get a bordered card (input row, bounded preview, and an inspector
+   * hint when lines were omitted); output-free calls render a compact one-line
+   * record so the action stays observable. A completion without a buffered
+   * start falls into the compact form.
+   */
+  #toolCard(
+    buffer: ToolCardBuffer,
+    id: string,
+    ok: boolean,
+    durationMs: number,
+  ): string {
+    const outcome = ok
+      ? this.#theme.success("succeeded")
+      : this.#theme.error("failed");
+    const title = `${this.#theme.brandStrong("⚙")} ${buffer.name} · ${outcome} · ${duration(durationMs)}`;
+    const preview = makeToolPreview({
+      stdout: buffer.stdout,
+      stderr: buffer.stderr,
+    });
+    if (preview.lines.length === 0) {
+      // No output to show (e.g. read/write/list/search): keep the record to a
+      // single compact line so the finished action stays observable.
+      return buffer.summary === "" ? title : `${title} · ${buffer.summary}`;
+    }
+    const rows: string[] = [];
+    if (buffer.summary !== "") {
+      rows.push(buffer.summary);
+    }
+    for (const line of preview.lines) {
+      rows.push(
+        line.stream === "stderr"
+          ? this.#theme.error(`stderr  ${line.text}`)
+          : `${this.#theme.muted("stdout")}  ${line.text}`,
+      );
+    }
+    if (preview.hiddenLineCount > 0) {
+      rows.push(
+        this.#theme.muted(
+          `… ${preview.hiddenLineCount} more lines hidden · /tool ${id.slice(0, TOOL_HINT_ID_PREFIX_LENGTH)}`,
+        ),
+      );
+    }
+    const border = ok ? this.#theme.brandBorder : this.#theme.error;
+    const titleWidth = terminalWidth(title);
+    const contentWidth = Math.max(
+      1,
+      titleWidth + 2,
+      ...rows.map((row) => terminalWidth(row)),
+    );
+    const padTo = (row: string): string => {
+      const visible = terminalWidth(row);
+      return visible >= contentWidth
+        ? row
+        : `${row}${" ".repeat(contentWidth - visible)}`;
+    };
+    const dashWidth = contentWidth - titleWidth - 1;
+    const top = `${border("╭─ ")}${title} ${border(`${"─".repeat(dashWidth)}╮`)}`;
+    const body = rows.map((row) => `│ ${padTo(row)} │`).join("\n");
+    const bottom = border(`╰${"─".repeat(contentWidth + 2)}╯`);
+    return `${top}\n${body}\n${bottom}`;
   }
 
   /**

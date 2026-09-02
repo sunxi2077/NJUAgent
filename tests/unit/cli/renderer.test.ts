@@ -285,12 +285,197 @@ describe("TerminalRenderer in TTY mode", () => {
     renderer.handle({ type: "run_finished", result: result("completed") });
 
     const text = stdout.text();
-    expect(text).toContain("read_file · src/index.ts");
-    expect(text).toContain("Completed · 2 steps · 1 tool call · 1.2s");
+    const visible = stripVTControlCharacters(text);
+    expect(visible).toContain("⚙ read_file · succeeded · 12ms · src/index.ts");
+    expect(visible).toContain("Completed · 2 steps · 1 tool call · 1.2s");
     expect(text).not.toContain("internal-call-id");
     expect(text).not.toContain('{"path"');
     expect(text).not.toContain("steps=");
     expect(text).not.toContain("duration_ms=");
+  });
+});
+
+describe("TerminalRenderer tool cards (TTY)", () => {
+  function commandCall(id: string, command: string): ToolExecutionRequest {
+    return { id, name: "run_command", input: { command } };
+  }
+
+  test("buffers command output and renders one bordered card per finished tool", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "tool_started",
+      id: "c1a2b3c4d5",
+      name: "run_command",
+      summary: '{"command":"npm test"}',
+    });
+    renderer.toolOutput(commandCall("c1a2b3c4d5", "npm test"), "stdout", "Running tests...\n");
+    renderer.toolOutput(commandCall("c1a2b3c4d5", "npm test"), "stdout", "✓ 42 tests passed\n");
+    renderer.toolOutput(commandCall("c1a2b3c4d5", "npm test"), "stderr", "warning: 1 deprecation\n");
+    renderer.toolOutput(commandCall("c1a2b3c4d5", "npm test"), "stderr", "second warning\n");
+
+    // No command output or input summary becomes permanent before completion.
+    const before = stripVTControlCharacters(stdout.text());
+    expect(before).not.toContain("npm test");
+    expect(before).not.toContain("42 tests passed");
+    expect(before).not.toContain("│");
+
+    renderer.handle({
+      type: "tool_completed",
+      id: "c1a2b3c4d5",
+      name: "run_command",
+      ok: true,
+      durationMs: 2300,
+    });
+
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("╭─ ⚙ run_command · succeeded · 2.3s");
+    expect(visible).toContain("│ npm test");
+    expect(visible).toContain("│ stdout  Running tests...");
+    expect(visible).toContain("│ stdout  ✓ 42 tests passed");
+    expect(visible).toContain("│ stderr  warning: 1 deprecation");
+    expect(visible).toContain("… 1 more lines hidden · /tool c1a2b3c4");
+    expect(visible).toContain("╰");
+    expect(visible).toContain("╯");
+    // Hidden lines and the full id never leak into the card.
+    expect(visible).not.toContain("second warning");
+    expect(visible).not.toContain("c1a2b3c4d5");
+    expect(visible).not.toContain('{"command"');
+
+    // Every framed line (top border, rows, bottom border) shares one width.
+    const frame = visible.split("\n").filter((line) => /^[╭│╰]/u.test(line));
+    expect(frame.length).toBeGreaterThan(2);
+    for (const line of frame) {
+      expect(terminalWidth(line), line).toBe(terminalWidth(frame[0]!));
+    }
+  });
+
+  test("a short result card omits the inspector hint", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "tool_started",
+      id: "c2",
+      name: "run_command",
+      summary: '{"command":"ls"}',
+    });
+    renderer.toolOutput(commandCall("c2", "ls"), "stdout", "src\n");
+    renderer.handle({
+      type: "tool_completed",
+      id: "c2",
+      name: "run_command",
+      ok: true,
+      durationMs: 1,
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("╭─ ⚙ run_command · succeeded · 1ms");
+    expect(visible).toContain("│ ls");
+    expect(visible).toContain("│ stdout  src");
+    expect(visible).not.toContain("hidden");
+    expect(visible).not.toContain("/tool");
+  });
+
+  test("a finished read call renders a compact one-line card", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "tool_started",
+      id: "c3",
+      name: "read_file",
+      summary: '{"path":"src/a.ts"}',
+    });
+    renderer.handle({
+      type: "tool_completed",
+      id: "c3",
+      name: "read_file",
+      ok: true,
+      durationMs: 12,
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("⚙ read_file · succeeded · 12ms · src/a.ts");
+    expect(visible).not.toContain("╭");
+    expect(visible).not.toContain("│");
+  });
+
+  test("a failed command renders an error-coloured card with its preview", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "tool_started",
+      id: "c4deadbeef",
+      name: "run_command",
+      summary: '{"command":"npm run build"}',
+    });
+    renderer.toolOutput(commandCall("c4deadbeef", "npm run build"), "stdout", "error TS2307: cannot find module\n");
+    renderer.toolOutput(commandCall("c4deadbeef", "npm run build"), "stderr", "build failed\n");
+    renderer.handle({
+      type: "tool_completed",
+      id: "c4deadbeef",
+      name: "run_command",
+      ok: false,
+      durationMs: 3400,
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("╭─ ⚙ run_command · failed · 3.4s");
+    expect(visible).toContain("│ npm run build");
+    expect(visible).toContain("│ stdout  error TS2307: cannot find module");
+    expect(visible).toContain("│ stderr  build failed");
+    expect(stdout.text()).toContain("\x1b[31m");
+  });
+
+  test("a completion without a preceding start still renders a compact card", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "tool_completed",
+      id: "c5",
+      name: "web_search",
+      ok: true,
+      durationMs: 200,
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("⚙ web_search · succeeded · 200ms");
+    expect(visible).not.toContain("╭");
+  });
+
+  test("each finished tool renders only its own buffered output", () => {
+    const stdout = new MemoryStdout();
+    const renderer = ttyRenderer(stdout);
+    renderer.handle({
+      type: "tool_started",
+      id: "c6",
+      name: "run_command",
+      summary: '{"command":"echo one"}',
+    });
+    renderer.toolOutput(commandCall("c6", "echo one"), "stdout", "one\n");
+    renderer.handle({
+      type: "tool_completed",
+      id: "c6",
+      name: "run_command",
+      ok: true,
+      durationMs: 1,
+    });
+    renderer.handle({
+      type: "tool_started",
+      id: "c7",
+      name: "run_command",
+      summary: '{"command":"echo two"}',
+    });
+    renderer.toolOutput(commandCall("c7", "echo two"), "stdout", "two\n");
+    renderer.handle({
+      type: "tool_completed",
+      id: "c7",
+      name: "run_command",
+      ok: true,
+      durationMs: 1,
+    });
+    const visible = stripVTControlCharacters(stdout.text());
+    expect(visible).toContain("│ stdout  one");
+    expect(visible).toContain("│ stdout  two");
+    // The second call's output must not leak into the first call's card.
+    const firstCard = visible.slice(0, visible.indexOf("echo two"));
+    expect(firstCard).toContain("│ stdout  one");
+    expect(firstCard).not.toContain("two");
   });
 });
 
@@ -385,9 +570,18 @@ describe("TerminalRenderer assistant anchors", () => {
       name: "read_file",
       summary: "{\"path\":\"a.ts\"}",
     });
+    renderer.handle({
+      type: "tool_completed",
+      id: "c1",
+      name: "read_file",
+      ok: true,
+      durationMs: 1,
+    });
     const visible = stripVTControlCharacters(stdout.text());
+    // The pending code fence is flushed onto its own line before the card.
     expect(visible).toContain("  │ const x = 1;");
-    expect(visible).toContain("⚙ read_file · a.ts");
+    expect(visible).toContain("⚙ read_file · succeeded · 1ms · a.ts");
+    expect(visible).not.toContain("╭");
   });
 
   test("retry permanent text follows flushed model text", () => {
