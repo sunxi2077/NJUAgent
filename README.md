@@ -129,6 +129,14 @@ A Skill is **plain prompt text**, not executable code: one `SKILL.md` per direct
 
 Installing an external Skill conversationally: paste a link to a raw `SKILL.md` (for GitHub, use the `raw.githubusercontent.com` URL, e.g. `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/SKILL.md`). NJUAgent reads only that file as plain text, inspects its frontmatter and content without executing anything inside it, and saves it at `<workspace>/.nju-agent/skills/<name>/SKILL.md` — never under `~/.claude`, `~/.codex`, or your home directory. It then reports the discovered name and waits for you to activate it with `/skill <name>`; it never activates a Skill or runs its install scripts itself. The download command still goes through the normal permission policy (it is asked in `balanced`/`cautious`; it may proceed automatically in `trusted` only when it passes the workspace guard).
 
+A complete paste-able example:
+
+```
+Install the frontend-ui Skill from https://raw.githubusercontent.com/<owner>/<repo>/<ref>/SKILL.md
+```
+
+NJUAgent downloads only that `SKILL.md`, saves it as `<workspace>/.nju-agent/skills/frontend-ui/SKILL.md`, prints the discovered name, and asks you to run `/skill frontend-ui` yourself. `/skills` lists what is available, including project skills discovered under `.nju-agent/skills`.
+
 ### Plans and goals
 
 - **Plans**: for multi-step tasks the model can maintain an execution plan with the `plan_write` tool (at most 12 steps, one `in_progress` at a time). The CLI shows each update as a compact progress panel (`◆ Plan 3/5`). `/plan` displays the current plan and `/plan clear` empties it.
@@ -139,6 +147,7 @@ Installing an external Skill conversationally: paste a link to a raw `SKILL.md` 
 - **Sessions**: `/sessions` lists the 12 most recent sessions by default; `/sessions all` shows every session. Long lists show a `… showing N of M · /sessions all` hint.
 - **Cost estimate caveats**: when both `MODEL_INPUT_COST_PER_MTOKENS` and `MODEL_OUTPUT_COST_PER_MTOKENS` are set, `/status` shows an **estimate** based only on provider-reported tokens captured by the client. It does not model provider-specific cache discounts, promotions, taxes, or external usage, and it never writes pricing into the user config.
 - **Web search**: with `TAVILY_API_KEY` set, `web_search` becomes available and every call requires your approval because the query is sent to an external service. Results are returned as untrusted reference material inside `<untrusted_web_results>`; they cannot trigger commands or override permission rules. Queries must never contain credentials or private source code.
+- **Tool cards**: while a tool runs, nothing is printed; when it finishes the renderer emits **one compact card** with the tool name, outcome, duration, the input summary and up to three preview lines (stderr in error colour). Omitted output is summarized as `… N more lines hidden · /tool <id-prefix>`, and `/tool <full-id-or-unique-prefix>` prints the retained full result from the session transcript. Non-TTY output stays stable `[stdout]`/`[stderr]` records.
 - There is **no automatic Git rollback**: NJUAgent never resets, restores, stashes, or commits on its own.
 
 ## Architecture

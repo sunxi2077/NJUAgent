@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { AppConfig } from "../../src/config.js";
 import type { Prompt } from "../../src/cli/prompt.js";
@@ -219,5 +220,52 @@ describe("skill lifecycle", () => {
     expect(manager2.activeSkill()?.source).toBe("user");
     await manager2.runTurn("again", new AbortController().signal);
     expect(provider.requests.at(-1)!.system).toContain("user instructions");
+  });
+
+  test("a project Skill at <workspace>/.nju-agent/skills/<name>/SKILL.md activates and reaches the provider", async () => {
+    const home = await tempDirectory("nju-skill-");
+    const workspace = await tempDirectory("nju-skill-work-");
+    const userRoot = await tempDirectory("nju-skill-user-");
+    const projectRoot = path.join(workspace, ".nju-agent", "skills");
+    await writeSkill(
+      projectRoot,
+      "frontend-ui",
+      "frontend UI conventions",
+      "Follow the workspace UI kit.",
+    );
+    const provider = new RecordingProvider();
+    const { manager } = await makeManager({
+      home,
+      workspace,
+      provider,
+      userSkillsRoot: userRoot,
+      projectSkillsRoot: projectRoot,
+    });
+
+    const activated = await manager.activateSkill("frontend-ui");
+    expect(activated.source).toBe("project");
+    await manager.runTurn("build the panel", new AbortController().signal);
+
+    const request = provider.requests[0]!;
+    expect(request.system).toContain("Follow the workspace UI kit.");
+    expect(request.system).toContain('<active_skill name="frontend-ui" source="project">');
+  });
+
+  test("no test fixture uses a home-level .claude skill path", async () => {
+    const fixtureRoot = fileURLToPath(new URL("../fixtures", import.meta.url));
+    const offenders: string[] = [];
+    const walk = async (directory: string): Promise<void> => {
+      const entries = await readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        const full = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          await walk(full);
+        } else if (full.includes(".claude")) {
+          offenders.push(full);
+        }
+      }
+    };
+    await walk(fixtureRoot);
+    expect(offenders).toEqual([]);
   });
 });

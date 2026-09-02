@@ -1,6 +1,7 @@
 import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, test } from "vitest";
@@ -14,6 +15,10 @@ import {
   type ToolResultBlock,
 } from "../../src/agent/messages.js";
 import { AgentRunner } from "../../src/agent/runner.js";
+import type { CommandContext } from "../../src/cli/command.js";
+import { createToolCommand } from "../../src/cli/commands/tool-command.js";
+import { TerminalRenderer } from "../../src/cli/renderer.js";
+import { createTheme } from "../../src/cli/theme.js";
 import type {
   ModelProvider,
   ModelRequest,
@@ -319,5 +324,136 @@ describe("offline end-to-end agent workflow", () => {
       expect(cancelled?.content).toContain("cancelled");
     },
     15_000,
+  );
+});
+
+describe("tool card and /tool inspector end-to-end", () => {
+  async function runToolCommand(
+    messages: readonly Message[],
+    prefix: string,
+  ): Promise<string[]> {
+    const printed: string[] = [];
+    const renderer = {
+      permissionRequest(): void {},
+      permissionDecision(): void {},
+      handle(): void {},
+      toolOutput(): void {},
+      print(text: string): void {
+        printed.push(text);
+      },
+      error(): void {},
+    };
+    const unused = (): never => {
+      throw new Error("unused");
+    };
+    const context: CommandContext = {
+      renderer,
+      theme: createTheme({ enabled: false }),
+      signal: new AbortController().signal,
+      webSearchAvailable: false,
+      display: { enhanced: false, columns: () => 80 },
+      skillRegistry: {
+        refresh: async () => ({ skills: [], diagnostics: [] }),
+        list: () => [],
+        resolve: () => undefined,
+        diagnostics: () => [],
+      },
+      sessionManager: {
+        messages: () => messages,
+        active: unused,
+        isDirty: () => false,
+        flush: async () => undefined,
+        createNew: unused,
+        resume: unused,
+        contextStatus: unused,
+        compact: unused,
+        activeSkill: () => undefined,
+        activateSkill: unused,
+        deactivateSkill: async () => undefined,
+        plan: () => ({ items: [] }),
+        clearPlan: async () => ({ items: [] }),
+        goal: () => null,
+        setGoal: unused,
+        clearGoal: async () => undefined,
+      },
+      store: { list: async () => ({ sessions: [], diagnostics: [] }) },
+    };
+    await createToolCommand().execute(prefix, context);
+    return printed;
+  }
+
+  test(
+    "a long command renders one compact card and /tool reveals the retained result",
+    async () => {
+      const tempDir = await makeTempWorkspace();
+      const callId = "tool1234abcd";
+      const provider = new ScriptedProvider([
+        [
+          complete(toolAssistant([
+            {
+              id: callId,
+              name: "run_command",
+              input: { command: "printf '1\\n2\\n3\\n4\\n5\\n'" },
+            },
+          ])),
+        ],
+        [
+          { type: "text_delta", text: "Done." },
+          complete(textAssistant("Done.")),
+        ],
+      ]);
+      const workspace = await Workspace.open(tempDir);
+      const registry = new ToolRegistry();
+      registry.register(
+        createRunCommandTool({
+          workspace,
+          defaultTimeoutMs: 15_000,
+          maxOutputBytes: 8192,
+        }),
+      );
+      const chunks: string[] = [];
+      const stdout = {
+        write(chunk: string): boolean {
+          chunks.push(chunk);
+          return true;
+        },
+      };
+      const renderer = new TerminalRenderer({ stdout, isTTY: true, noColor: false });
+      const executor = new ToolExecutor({
+        registry,
+        permissionPolicy: new BalancedPermissionPolicy(),
+        confirm: async () => true,
+        onOutput: (call, stream, text) => renderer.toolOutput(call, stream, text),
+      });
+      const history = new ConversationHistory();
+      const runner = new AgentRunner({
+        provider,
+        history,
+        tools: executor,
+        maxSteps: 5,
+        systemPrompt: "Be precise.",
+        onEvent: (event) => renderer.handle(event),
+      });
+
+      const result = await runner.run("print lines", new AbortController().signal);
+
+      expect(result.status).toBe("completed");
+      assertValidHistory(history.snapshot());
+      const visible = stripVTControlCharacters(chunks.join(""));
+      // Exactly one compact card; hidden lines never stream to the transcript.
+      expect(visible).toContain("╭─ ⚙ run_command · succeeded");
+      expect(visible).toContain("│ stdout  1");
+      expect(visible).toContain("… 2 more lines hidden · /tool tool1234");
+      expect(visible).not.toContain("│ stdout  4");
+      expect(visible).not.toContain("│ stdout  5");
+
+      // /tool with the card's 8-character prefix prints the retained result.
+      const printed = await runToolCommand(history.snapshot(), "tool1234");
+      const text = printed.join("\n");
+      expect(text).toContain(`Tool ${callId} (run_command)`);
+      expect(text).toContain("Stored result:");
+      expect(text).toContain("stdout:\n1\n2\n3\n4\n5");
+    },
+    20_000,
   );
 });
