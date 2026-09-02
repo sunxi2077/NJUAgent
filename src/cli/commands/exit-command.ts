@@ -6,6 +6,7 @@ export function createExitCommand(): SlashCommand {
     name: "exit",
     usage: "/exit",
     description: "Save the current session and exit",
+    group: "session",
     async execute(_args, context) {
       try {
         await context.sessionManager.flush();

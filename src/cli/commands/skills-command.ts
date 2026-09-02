@@ -6,6 +6,7 @@ export function createSkillsCommand(): SlashCommand {
     name: "skills",
     usage: "/skills",
     description: "List available skills",
+    group: "context",
     async execute(_args, context) {
       await context.skillRegistry.refresh();
       const skills = context.skillRegistry.list();
@@ -17,7 +18,11 @@ export function createSkillsCommand(): SlashCommand {
         );
       } else {
         context.renderer.print(
-          formatSkillList(skills, { activeName, theme: context.theme }),
+          formatSkillList(skills, {
+            activeName,
+            theme: context.theme,
+            ...(context.display.enhanced ? { columns: context.display.columns() } : {}),
+          }),
         );
       }
       for (const diagnostic of context.skillRegistry.diagnostics()) {

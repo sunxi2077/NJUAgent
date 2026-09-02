@@ -6,6 +6,7 @@ export function createHistoryCommand(): SlashCommand {
     name: "history",
     usage: "/history [1-100]",
     description: "Show recent messages",
+    group: "session",
     async execute(args, context) {
       let count = 20;
       const trimmed = args.trim();

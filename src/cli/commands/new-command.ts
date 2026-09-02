@@ -6,6 +6,7 @@ export function createNewCommand(): SlashCommand {
     name: "new",
     usage: "/new",
     description: "Start a new session",
+    group: "session",
     async execute(_args, context) {
       try {
         const session = await context.sessionManager.createNew();

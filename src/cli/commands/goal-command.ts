@@ -22,6 +22,7 @@ export function createGoalCommand(): SlashCommand {
     name: "goal",
     usage: "/goal [clear|<completion condition>]",
     description: "Show, set, or clear the explicit completion goal",
+    group: "agent",
     async execute(args, context) {
       const argument = args.trim();
       if (argument === "") {

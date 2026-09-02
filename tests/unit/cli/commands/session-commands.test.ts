@@ -56,6 +56,13 @@ type FakeServices = {
   flushError?: Error;
   newSession?: PersistedSessionV1;
   resumeError?: Error;
+  sessions?: Array<{
+    id: string;
+    title: string;
+    workspaceRoot: string;
+    modelId: string;
+    updatedAt: string;
+  }>;
 };
 
 function makeContext(overrides: Partial<FakeServices> = {}) {
@@ -123,7 +130,7 @@ function makeContext(overrides: Partial<FakeServices> = {}) {
     },
     store: {
       list: async () => ({
-        sessions: [
+        sessions: overrides.sessions ?? [
           {
             id: activeSession.id,
             title: activeSession.title,
@@ -264,5 +271,79 @@ describe("session slash commands", () => {
     expect(renderer.printed[0]).toContain("/status");
     expect(renderer.printed[0]).toContain("/exit");
     expect(renderer.printed[0]).toContain("/help");
+  });
+
+  test("/sessions defaults to 12 rows with a truncated hint and one current marker", async () => {
+    const sessionsCmd = createSessionsCommand();
+    const many = Array.from({ length: 15 }, (_, index) => ({
+      id: `${String(index).padStart(8, "0")}-1111-4111-8111-111111111111`,
+      title: `session ${index}`,
+      workspaceRoot: "/tmp/w",
+      modelId: "m",
+      updatedAt: "2026-08-28T08:00:00.000Z",
+    }));
+    const { context, renderer } = makeContext({
+      activeSession: session({ id: many[0]!.id }),
+      sessions: many,
+    });
+    await sessionsCmd.execute("", context);
+    const printed = renderer.printed[0]!;
+    expect(printed.match(/●/gu)).toHaveLength(1);
+    expect(printed).toContain("Sessions (15):");
+    expect(printed).toContain("showing 12 of 15");
+    expect(printed).toContain("/sessions all");
+  });
+
+  test("/sessions all lists every session without the truncated hint", async () => {
+    const sessionsCmd = createSessionsCommand();
+    const many = Array.from({ length: 15 }, (_, index) => ({
+      id: `${String(index).padStart(8, "0")}-1111-4111-8111-111111111111`,
+      title: `session ${index}`,
+      workspaceRoot: "/tmp/w",
+      modelId: "m",
+      updatedAt: "2026-08-28T08:00:00.000Z",
+    }));
+    const { context, renderer } = makeContext({
+      activeSession: session({ id: many[0]!.id }),
+      sessions: many,
+    });
+    await sessionsCmd.execute("all", context);
+    expect(renderer.printed[0]!).toContain("Sessions (15):");
+    expect(renderer.printed[0]!).not.toContain("showing");
+  });
+
+  test("/sessions rejects unknown arguments with usage and does not list twice", async () => {
+    const sessionsCmd = createSessionsCommand();
+    const { context, renderer } = makeContext();
+    let calls = 0;
+    const original = context.store.list;
+    context.store = { list: async () => { calls += 1; return original(); } };
+    const result = await sessionsCmd.execute("--all", context);
+    expect(result).toEqual({ kind: "continue", stateChanged: false });
+    expect(renderer.errors[0]).toContain("Usage: /sessions [all]");
+    expect(calls).toBe(0);
+  });
+
+  test("enhanced help groups commands in the stated order", async () => {
+    const router = new SlashCommandRouter();
+    router.register(createHelpCommand(() => router.commands()));
+    router.register(createStatusCommand());
+    router.register(createSessionsCommand());
+    router.register(createExitCommand());
+    const { context, renderer } = makeContext();
+    context.theme = createTheme({ enabled: true });
+    context.display = { enhanced: true, columns: () => 80 };
+    await router.route("/help", context);
+    const printed = renderer.printed[0]!;
+    const sessionIndex = printed.indexOf("Session");
+    const agentIndex = printed.indexOf("Agent");
+    const configurationIndex = printed.indexOf("Configuration");
+    expect(sessionIndex).toBeGreaterThan(-1);
+    expect(agentIndex).toBeGreaterThan(sessionIndex);
+    expect(configurationIndex).toBeGreaterThan(agentIndex);
+    for (const usage of ["/status", "/sessions", "/exit", "/help"]) {
+      expect(printed).toContain(usage);
+    }
+    expect(printed).toContain("/sessions [all]");
   });
 });

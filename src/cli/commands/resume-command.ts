@@ -6,6 +6,7 @@ export function createResumeCommand(): SlashCommand {
     name: "resume",
     usage: "/resume <id>",
     description: "Resume a saved session by full ID or unique prefix",
+    group: "session",
     async execute(args, context) {
       const id = args.trim();
       if (id === "") {

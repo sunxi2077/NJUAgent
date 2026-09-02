@@ -13,12 +13,32 @@ export type RouteResult =
   | { kind: "handled"; stateChanged: boolean }
   | { kind: "exit" };
 
+export type CommandGroup = "session" | "agent" | "context" | "configuration";
+
 export interface SlashCommand {
   readonly name: string;
   readonly usage: string;
   readonly description: string;
+  /** Help grouping for the core command surface. */
+  readonly group?: CommandGroup;
   execute(args: string, context: CommandContext): Promise<CommandResult>;
 }
+
+/** Help grouping labels in display order. */
+export const COMMAND_GROUP_LABELS: Readonly<Record<CommandGroup, string>> = {
+  session: "Session",
+  agent: "Agent",
+  context: "Context & skills",
+  configuration: "Configuration",
+};
+
+/** Display order for help grouping. */
+export const COMMAND_GROUP_ORDER: readonly CommandGroup[] = [
+  "session",
+  "agent",
+  "context",
+  "configuration",
+];
 
 /** Safe read-only command metadata for the slash palette; never exposes execute. */
 export type SlashCommandDescriptor = Readonly<

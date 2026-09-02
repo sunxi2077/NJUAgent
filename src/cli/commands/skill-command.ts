@@ -6,6 +6,7 @@ export function createSkillCommand(): SlashCommand {
     name: "skill",
     usage: "/skill <name>|off",
     description: "Activate or deactivate a skill",
+    group: "context",
     async execute(args, context) {
       const trimmed = args.trim();
       if (trimmed === "") {

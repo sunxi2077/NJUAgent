@@ -43,6 +43,7 @@ export function createPlanCommand(): SlashCommand {
     name: "plan",
     usage: "/plan [clear]",
     description: "Show or clear the model-maintained execution plan",
+    group: "agent",
     async execute(args, context) {
       const argument = args.trim();
       if (argument === "") {

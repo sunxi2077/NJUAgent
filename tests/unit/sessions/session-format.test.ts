@@ -54,7 +54,8 @@ describe("formatSessionList", () => {
       currentId: "3f2c9d5a-6b1e-4f80-9a2c-7d8e1f0a3b4c",
       theme: plain,
     });
-    expect(text.match(/current/gu)).toHaveLength(1);
+    // The current session carries exactly one bullet marker.
+    expect(text.match(/●/gu)).toHaveLength(1);
     expect(text).toContain("aaaaaaaa");
     expect(text).toContain("3f2c9d5a");
   });

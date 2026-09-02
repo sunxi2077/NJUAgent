@@ -6,6 +6,7 @@ export function createContextCommand(): SlashCommand {
     name: "context",
     usage: "/context",
     description: "Show context budget and checkpoint status",
+    group: "context",
     async execute(_args, context) {
       const status = context.sessionManager.contextStatus();
       context.renderer.print(

@@ -6,6 +6,7 @@ export function createSetupCommand(): SlashCommand {
     name: "setup",
     usage: "/setup",
     description: "Update model and permission configuration",
+    group: "configuration",
     async execute(_args, context) {
       try {
         if (context.runSetup === undefined) {

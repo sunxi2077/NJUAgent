@@ -129,7 +129,7 @@ describe("/skills", () => {
     expect(text.indexOf("alpha")).toBeLessThan(text.indexOf("zeta"));
     expect(text).toContain("[project]");
     expect(text).toContain("[user]");
-    expect(text).toContain("(active)");
+    expect(text).toContain("● alpha");
     expect(text).toContain("Require a failing test");
   });
 

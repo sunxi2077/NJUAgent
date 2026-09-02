@@ -6,6 +6,7 @@ export function createStatusCommand(): SlashCommand {
     name: "status",
     usage: "/status",
     description: "Show current session status",
+    group: "agent",
     async execute(_args, context) {
       context.renderer.print(
         formatSessionStatus(context.sessionManager.active(), {

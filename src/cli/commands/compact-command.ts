@@ -6,6 +6,7 @@ export function createCompactCommand(): SlashCommand {
     name: "compact",
     usage: "/compact [focus]",
     description: "Summarize the covered conversation",
+    group: "context",
     async execute(args, context) {
       const focus = args.trim() === "" ? undefined : args.trim();
       context.renderer.print(
