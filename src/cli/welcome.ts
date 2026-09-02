@@ -30,6 +30,8 @@ const NJU_LOGO = [
 
 const HELP_LINE = "Type /help for commands · Ctrl-C cancels · twice exits";
 const PLAIN_HELP_LINE = "Type /help for usage, or enter a task.";
+const TRUSTED_MODE_NOTE =
+  "trusted: fewer prompts for a workspace you trust; outside-workspace and high-risk commands remain blocked";
 
 type Cell = { text: string; style?: (text: string) => string };
 
@@ -143,8 +145,11 @@ function plainLayout(view: WelcomeView, safeColumns: number): string[] {
     `workspace: ${truncateToTerminalWidth(view.workspace, valueWidth)}`,
     `model: ${truncateToTerminalWidth(view.model, valueWidth)}`,
     `permission mode: ${view.permissionMode}`,
-    truncateToTerminalWidth(PLAIN_HELP_LINE, safeColumns),
   ];
+  if (view.permissionMode === "trusted") {
+    lines.push(truncateToTerminalWidth(TRUSTED_MODE_NOTE, safeColumns));
+  }
+  lines.push(truncateToTerminalWidth(PLAIN_HELP_LINE, safeColumns));
   if (view.recentSession !== undefined) {
     lines.push(
       truncateToTerminalWidth(`Use /resume ${view.recentSession} to continue.`, safeColumns),
@@ -160,6 +165,11 @@ function hintLines(
   safeColumns: number,
 ): string[] {
   const hints = [theme.muted(truncateToTerminalWidth(HELP_LINE, safeColumns))];
+  if (view.permissionMode === "trusted") {
+    hints.push(
+      theme.muted(truncateToTerminalWidth(TRUSTED_MODE_NOTE, safeColumns)),
+    );
+  }
   if (view.recentSession !== undefined) {
     hints.push(
       theme.muted(

@@ -10,7 +10,7 @@ export type PersistedConfigV1 = {
   schemaVersion: 1;
   baseURL: string;
   model: string;
-  permissionMode: "balanced" | "cautious";
+  permissionMode: "balanced" | "cautious" | "trusted";
 };
 
 const CONFIG_SCHEMA = {
@@ -19,7 +19,7 @@ const CONFIG_SCHEMA = {
     schemaVersion: { const: 1 },
     baseURL: { type: "string", pattern: "\\S" },
     model: { type: "string", pattern: "\\S" },
-    permissionMode: { enum: ["balanced", "cautious"] },
+    permissionMode: { enum: ["balanced", "cautious", "trusted"] },
   },
   required: ["schemaVersion", "baseURL", "model", "permissionMode"],
   additionalProperties: false,

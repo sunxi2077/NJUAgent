@@ -148,9 +148,17 @@ describe("loadConfig (compatibility wrapper)", () => {
     expect(config.permissionMode).toBe("cautious");
   });
 
+  test("accepts --permission-mode trusted", () => {
+    const config = loadConfig(validEnv, ["--permission-mode", "trusted"]);
+    expect(config.permissionMode).toBe("trusted");
+  });
+
   test("rejects an invalid permission mode", () => {
     expect(() =>
       loadConfig(validEnv, ["--permission-mode", "paranoid"]),
+    ).toThrow(/balanced.*cautious/u);
+    expect(() =>
+      loadConfig(validEnv, ["--permission-mode", "trusting"]),
     ).toThrow(/balanced.*cautious/u);
   });
 

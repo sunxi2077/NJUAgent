@@ -24,9 +24,12 @@ import { GoalController } from "../goals/goal-controller.js";
 import {
   BalancedPermissionPolicy,
   CautiousPermissionPolicy,
+  TrustedPermissionPolicy,
+  type PermissionPolicy,
 } from "../security/permission-policy.js";
 import { Workspace } from "../security/workspace.js";
 import type { ActiveRuntime } from "../sessions/session-manager.js";
+import type { PermissionMode } from "../config.js";
 import type { PersistedSessionV1 } from "../sessions/session-schema.js";
 import { createRunCommandTool } from "../tools/command-tool.js";
 import { ToolExecutor } from "../tools/executor.js";
@@ -54,6 +57,22 @@ export type CreateRuntimeDeps = {
   /** Test seam: inject a fake search provider instead of the real Tavily client. */
   webSearchProvider?: WebSearchProvider;
 };
+
+/**
+ * One centralized permission-policy factory: every session/runtime build picks
+ * its policy here from the persisted mode, never from ad-hoc switches.
+ */
+function permissionPolicyFor(mode: PermissionMode): PermissionPolicy {
+  switch (mode) {
+    case "cautious":
+      return new CautiousPermissionPolicy();
+    case "trusted":
+      return new TrustedPermissionPolicy();
+    case "balanced":
+    default:
+      return new BalancedPermissionPolicy();
+  }
+}
 
 /**
  * Builds an `ActiveRuntime` for a session: canonical workspace, tools,
@@ -122,9 +141,7 @@ export async function createRuntime(
     );
   }
 
-  const permissionPolicy = session.permissionMode === "cautious"
-    ? new CautiousPermissionPolicy()
-    : new BalancedPermissionPolicy();
+  const permissionPolicy = permissionPolicyFor(session.permissionMode);
   const evidenceLedger = new EvidenceLedger({ state: session.evidence });
   const executor = new ToolExecutor({
     registry,

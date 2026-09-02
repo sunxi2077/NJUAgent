@@ -10,6 +10,8 @@ const WORKSPACE_LIMIT = 60;
 const MESSAGE_PREVIEW_LIMIT = 240;
 const TOOL_RESULT_LIMIT = 160;
 const BAR_CELLS = 15;
+const TRUSTED_MODE_NOTE =
+  "trusted: fewer prompts for a workspace you trust; outside-workspace and high-risk commands remain blocked";
 
 export type TokenPricing = { inputPerMillion: number; outputPerMillion: number };
 
@@ -182,6 +184,7 @@ export function formatSessionStatus(
       symbol: "◆",
       title: "Session status",
       sections,
+      ...(session.permissionMode === "trusted" ? { footer: TRUSTED_MODE_NOTE } : {}),
     };
     return formatCommandPanel(panel, { columns: options.columns, theme });
   }
@@ -198,6 +201,7 @@ export function formatSessionStatus(
     `Estimate: ${options.pricing === undefined ? "not configured" : "configured"}`,
     `Messages: ${session.messages.length}`,
     `Dirty: ${dirty ? "yes" : "no"}`,
+    ...(session.permissionMode === "trusted" ? [TRUSTED_MODE_NOTE] : []),
     theme.muted(`/help for commands`),
   ].join("\n");
 }

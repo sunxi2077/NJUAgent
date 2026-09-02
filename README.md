@@ -23,6 +23,8 @@ NJUAgent is a normal command-line application: configuration comes from environm
 
 On first run (TTY only), missing Base URL or Model triggers an interactive setup that saves only those non-secret values — Base URL, Model, and permission mode — to `config.json` under the application home (`NJU_AGENT_HOME`, default `~/.nju-agent`). `ANTHROPIC_API_KEY` is read **only** from the process environment and is never written to disk.
 
+Permission modes (`--permission-mode` or `/setup`): `cautious` asks before writes and commands, `balanced` (default) auto-allows safe workspace commands, and `trusted` auto-allows any workspace-local command that passes the hard guard — **fewer prompts for a workspace you trust; outside-workspace and high-risk commands remain blocked**. There is no “unrestricted” mode, and the model can never change the mode for you.
+
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | yes | — | API key; environment only, never stored on disk |
@@ -51,6 +53,7 @@ npm install
 npm run build
 npm start -- --workspace /path/to/project
 npm start -- --workspace /path/to/project --permission-mode cautious --debug
+npm start -- --workspace /path/to/project --permission-mode trusted --debug
 ```
 
 `njuagent` becomes available as a short command only after an explicit link or install step (optional):

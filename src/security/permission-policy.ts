@@ -137,3 +137,31 @@ export class CautiousPermissionPolicy implements PermissionPolicy {
     return { action: "ask", reason: `Unrecognized tool requires confirmation: ${request.name}` };
   }
 }
+
+/**
+ * Opt-in high-trust mode: fewer prompts for a workspace you trust. The hard
+ * workspace guard still runs first, so outside-workspace and high-risk
+ * commands stay blocked exactly as in every other mode. File tools and any
+ * run_command that passes the guard are auto-allowed; external tools (web
+ * search) and unrecognized tool names still require a prompt, so a future
+ * privileged tool cannot silently inherit trusted-mode approval.
+ */
+export class TrustedPermissionPolicy implements PermissionPolicy {
+  decide(request: ToolExecutionRequest): PermissionDecision {
+    if (readOnlyTools.has(request.name) || writeTools.has(request.name) || metadataTools.has(request.name)) {
+      return { action: "allow" };
+    }
+    if (externalTools.has(request.name)) {
+      return { action: "ask", reason: WEB_SEARCH_REASON };
+    }
+    const command = commandText(request);
+    if (command !== undefined) {
+      const guarded = guardWorkspaceCommand(command);
+      if (guarded.action === "deny") {
+        return guarded;
+      }
+      return { action: "allow" };
+    }
+    return { action: "ask", reason: `Unrecognized tool requires confirmation: ${request.name}` };
+  }
+}

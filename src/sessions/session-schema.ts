@@ -91,7 +91,7 @@ const SESSION_SCHEMA = {
     updatedAt: { type: "string", minLength: 1 },
     workspaceRoot: { type: "string", minLength: 1 },
     modelId: { type: "string", minLength: 1 },
-    permissionMode: { enum: ["balanced", "cautious"] },
+    permissionMode: { enum: ["balanced", "cautious", "trusted"] },
     activeSkill: { type: ["string", "null"] },
     messages: { type: "array" },
     context: {

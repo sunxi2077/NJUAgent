@@ -1,14 +1,21 @@
 export const HELP_TEXT = `NJUAgent - a local command-line coding agent
 
 Usage:
-  npm start -- --workspace <path> [--permission-mode balanced|cautious] [--debug]
-  njuagent [path] [--permission-mode balanced|cautious] [--debug]
+  npm start -- --workspace <path> [--permission-mode balanced|cautious|trusted] [--debug]
+  njuagent [path] [--permission-mode balanced|cautious|trusted] [--debug]
 
 Options:
   path, --workspace <path>     Workspace root; defaults to the current directory
-  --permission-mode <mode>     balanced (default) or cautious
+  --permission-mode <mode>     balanced (default), cautious, or trusted
   --debug                      Print sanitized startup diagnostics
   -h, --help                   Show this help without requiring API credentials
+
+Permission modes:
+  cautious asks before writes and commands; balanced auto-allows safe
+  workspace commands; trusted auto-allows any workspace-local command that
+  passes the hard guard — fewer prompts for a workspace you trust.
+  Outside-workspace and high-risk commands remain blocked in every mode;
+  there is no "unrestricted" mode.
 
 Environment:
   ANTHROPIC_API_KEY            API key; environment only, never stored on disk

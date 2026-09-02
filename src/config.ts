@@ -1,7 +1,7 @@
 import { AppError } from "./errors/app-error.js";
 import type { PersistedConfigV1 } from "./storage/config-store.js";
 
-export type PermissionMode = "balanced" | "cautious";
+export type PermissionMode = "balanced" | "cautious" | "trusted";
 
 export type AppConfig = {
   apiKey: string;
@@ -153,9 +153,9 @@ function assignOption(parsed: ParsedArgs, option: string, value: string): void {
     return;
   }
   if (option === "--permission-mode") {
-    if (value !== "balanced" && value !== "cautious") {
+    if (value !== "balanced" && value !== "cautious" && value !== "trusted") {
       throw new ConfigError(
-        `--permission-mode must be "balanced" or "cautious"; got "${value}"`,
+        `--permission-mode must be "balanced", "cautious", or "trusted"; got "${value}"`,
       );
     }
     parsed.permissionMode = value;

@@ -32,9 +32,9 @@ function validateModel(value: string): string | undefined {
 }
 
 function validateMode(value: string): string | undefined {
-  return value === "balanced" || value === "cautious"
+  return value === "balanced" || value === "cautious" || value === "trusted"
     ? undefined
-    : "must be balanced or cautious";
+    : "must be balanced, cautious, or trusted";
 }
 
 async function askValue(
@@ -90,7 +90,7 @@ export async function runSetup(deps: SetupDeps): Promise<PersistedConfigV1 | nul
 
   const mode = await askValue(
     deps.prompt,
-    "Permission mode (balanced|cautious)",
+    "Permission mode (balanced|cautious|trusted)",
     deps.defaults?.permissionMode,
     validateMode,
   );

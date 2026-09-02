@@ -186,6 +186,21 @@ describe("bootstrap", () => {
     expect(prompt.promptTexts[0]).toBe("❯ You  ");
   });
 
+  test("--permission-mode trusted flows into the session welcome", async () => {
+    const { deps, stdout, prompt } = await makeDeps({
+      argv: ["--permission-mode", "trusted"],
+    });
+    prompt.reads = [null];
+
+    const exitCode = await main(deps);
+
+    expect(exitCode).toBe(0);
+    const text = stdout.text();
+    expect(text).toContain("permission mode: trusted");
+    expect(text).toContain("fewer prompts for a workspace you trust");
+    expect(text).toContain("outside-workspace and high");
+  });
+
   test("a real TTY clears the screen once before the welcome panel", async () => {
     const { deps, stdout, prompt } = await makeDeps({ isTTY: true });
     prompt.reads = [null];

@@ -63,6 +63,38 @@ describe("runSetup", () => {
     expect(saved).not.toHaveProperty("apiKey");
   });
 
+  test("offers balanced, cautious, and trusted in the prompt", async () => {
+    const file = await tempConfigFile();
+    const prompt = new FakePrompt();
+    prompt.reads = ["https://api.example", "deepseek-v4-flash", "trusted"];
+
+    const config = await runSetup({ prompt, store: new ConfigStore(file) });
+
+    expect(config?.permissionMode).toBe("trusted");
+    expect(prompt.questions[2]).toContain("balanced");
+    expect(prompt.questions[2]).toContain("cautious");
+    expect(prompt.questions[2]).toContain("trusted");
+    const saved = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
+    expect(saved.permissionMode).toBe("trusted");
+  });
+
+  test("reprompts when the permission mode is invalid", async () => {
+    const file = await tempConfigFile();
+    const prompt = new FakePrompt();
+    prompt.reads = [
+      "https://api.example",
+      "deepseek-v4-flash",
+      "paranoid",
+      "trusted",
+    ];
+
+    const config = await runSetup({ prompt, store: new ConfigStore(file) });
+
+    expect(config?.permissionMode).toBe("trusted");
+    // The invalid answer produced an extra read for the same question.
+    expect(prompt.questions.filter((q) => q.includes("Permission mode"))).toHaveLength(2);
+  });
+
   test("returns null and saves nothing when cancelled", async () => {
     const file = await tempConfigFile();
     const prompt = new FakePrompt();
