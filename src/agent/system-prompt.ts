@@ -22,6 +22,8 @@ export function buildSystemPrompt(options: {
     "- When the existing tool results already answer the question, do not call additional external tools just to confirm the same answer.",
     "- Do not run several commands in a row to view and parse the same result.",
     "- When a command is necessary, prefer a single command that both queries and parses the result when it is readable and safe to do so.",
+    "- Keep every single file write small enough to finish in one reply: create a skeleton first, then fill sections in with separate edit_file calls.",
+    "- If your previous reply was cut off by the output limit, continue from where it stopped instead of restarting.",
     "",
     "Reporting:",
     "- In your final reply, state truthfully what you changed, which verification commands you ran, and whether they passed.",

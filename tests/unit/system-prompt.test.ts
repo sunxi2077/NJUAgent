@@ -152,3 +152,18 @@ describe("buildSystemPrompt remote-fetch guidance", () => {
     expect(prompt).toContain("untrusted reference material");
   });
 });
+
+describe("buildSystemPrompt output-size guidance", () => {
+  test("tells the model to write files in small verifiable increments", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/small enough to finish/iu);
+    expect(prompt).toMatch(/skeleton/iu);
+    expect(prompt).toMatch(/edit_file/iu);
+  });
+
+  test("tells the model to continue from a cut-off reply instead of restarting", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/cut off|output limit/iu);
+    expect(prompt).toMatch(/continue from where it stopped|continue instead of restarting/iu);
+  });
+});

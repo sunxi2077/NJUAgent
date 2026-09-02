@@ -57,7 +57,7 @@ describe("loadConfig (compatibility wrapper)", () => {
     expect(config.commandTimeoutMs).toBe(120000);
     expect(config.toolOutputMaxBytes).toBe(32768);
     expect(config.uiOutputMaxBytes).toBe(65536);
-    expect(config.maxTokens).toBe(4096);
+    expect(config.maxTokens).toBe(8192);
     expect(config.permissionMode).toBe("balanced");
     expect(config.debug).toBe(false);
     expect(config.workspaceRoot).toBe(process.cwd());

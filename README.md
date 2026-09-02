@@ -32,7 +32,7 @@ Permission modes (`--permission-mode` or `/setup`): `cautious` asks before write
 | `MODEL_ID` | yes* | — | model name supported by the endpoint |
 | `NJU_AGENT_HOME` | no | `~/.nju-agent` | application home (config, sessions, skills) |
 | `AGENT_MAX_STEPS` | no | `20` | max model requests per user turn |
-| `AGENT_MAX_TOKENS` | no | `4096` | `max_tokens` sent to the model |
+| `AGENT_MAX_TOKENS` | no | `8192` | `max_tokens` per reply (raise to 12000 for big single writes) |
 | `COMMAND_TIMEOUT_MS` | no | `120000` | default `run_command` timeout |
 | `TOOL_OUTPUT_MAX_BYTES` | no | `32768` | max tool output returned to the model |
 | `UI_OUTPUT_MAX_BYTES` | no | `65536` | maximum command output shown live per tool call |
@@ -234,6 +234,7 @@ Unit tests cover the runner loop, message invariants, workspace boundary, creden
 - Context accounting uses a conservative estimate plus the latest Provider usage; it is not an exact tokenizer calculation.
 - `edit_file` requires exact literal matches; there is no fuzzy or patch-based editing.
 - The agent's claims are only as good as the commands it actually ran; the UI never fabricates a "verified" badge.
+- When a reply is cut off by the model output limit (e.g. a huge one-shot `write_file`), the runner retries automatically with a "write smaller pieces" note (up to twice per turn) instead of failing; raising `AGENT_MAX_TOKENS` (default 8192, up to ~12000) further reduces how often this happens. Model-side, prefer a file skeleton plus `edit_file` sections over one giant write.
 
 ## Documentation
 
