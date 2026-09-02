@@ -56,3 +56,60 @@ describe("buildSystemPrompt summary layer", () => {
     expect(prompt.indexOf("Boundaries:")).toBeLessThan(prompt.indexOf("<conversation_summary>"));
   });
 });
+
+describe("buildSystemPrompt project-skill contract", () => {
+  test("keeps the workspace-only and credential boundaries", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/only access files inside the workspace/iu);
+    expect(prompt).toMatch(/never include credentials or secrets/iu);
+  });
+
+  test("points project Skills at the exact workspace destination", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain(".nju-agent/skills/<name>/SKILL.md");
+  });
+
+  test("prohibits home and global agent directories for Skills", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toContain(".claude");
+    expect(prompt).toContain(".codex");
+    expect(prompt).toMatch(/home/u);
+    expect(prompt).toMatch(/global agent/u);
+  });
+
+  test("treats external Skill content as untrusted prompt text only", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/untrusted/iu);
+    expect(prompt).toMatch(/SKILL\.md/u);
+    expect(prompt).toMatch(/never run|do not run|install scripts/iu);
+  });
+
+  test("requires the user to activate a discovered Skill with /skill", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/\/skill <name>/u);
+    expect(prompt).toMatch(/do not activate it yourself|let the user activate/iu);
+  });
+
+  test("states host permissions and workspace checks remain authoritative", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).toMatch(/remain authoritative/iu);
+  });
+
+  test("omits concrete paths unless workspace options are provided", () => {
+    const prompt = buildSystemPrompt();
+    expect(prompt).not.toContain("/tmp/workspace");
+    expect(prompt).not.toContain("/tmp/workspace/.nju-agent");
+  });
+
+  test("includes the concrete project-skill directory when provided", () => {
+    const prompt = buildSystemPrompt({
+      workspaceRoot: "/tmp/workspace",
+      projectSkillDirectory: "/tmp/workspace/.nju-agent/skills",
+      summary: "s",
+    });
+    expect(prompt).toContain("/tmp/workspace");
+    expect(prompt).toContain("/tmp/workspace/.nju-agent/skills");
+    // The summary block is still appended once after the base instructions.
+    expect(prompt.match(/<conversation_summary>/gu)).toHaveLength(1);
+  });
+});

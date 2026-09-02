@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { ContextManager } from "../agent/context-manager.js";
 import { ContextPolicy } from "../agent/context-policy.js";
 import { ModelCompactor } from "../agent/compactor.js";
@@ -198,7 +200,14 @@ export async function createRuntime(
     history,
     tools: executor,
     maxSteps: deps.config.maxSteps,
-    systemPrompt: buildSystemPrompt(),
+    systemPrompt: buildSystemPrompt({
+      workspaceRoot: session.workspaceRoot,
+      projectSkillDirectory: path.join(
+        session.workspaceRoot,
+        ".nju-agent",
+        "skills",
+      ),
+    }),
     systemPromptProvider,
     contextManager,
     retryPolicy: {
