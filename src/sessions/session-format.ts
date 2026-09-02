@@ -58,15 +58,47 @@ export function formatSessionList(options: {
   sessions: readonly SessionListEntry[];
   currentId: string;
   theme: TerminalTheme;
+  columns?: number;
+  totalCount?: number;
+  truncated?: boolean;
 }): string {
   const { sessions, currentId, theme } = options;
+  const total = options.totalCount ?? sessions.length;
+
+  if (options.columns !== undefined && theme.enabled) {
+    const panel: CommandPanel = {
+      symbol: "◇",
+      title: `Sessions · ${total} total`,
+      sections: [
+        {
+          rows: sessions.map((entry) => {
+            const marker = entry.id === currentId ? "●" : " ";
+            const title = truncateText(entry.title, TITLE_LIMIT);
+            const workspace = truncateText(entry.workspaceRoot, WORKSPACE_LIMIT);
+            return {
+              value: `${marker} ${entry.id.slice(0, 8)}  ${title}  ${workspace}  ${entry.updatedAt}`,
+            };
+          }),
+        },
+      ],
+    };
+    if (options.truncated === true) {
+      panel.footer = `… showing ${sessions.length} of ${total} · /sessions all for the full list`;
+    }
+    return formatCommandPanel(panel, { columns: options.columns, theme });
+  }
+
   const rows = sessions.map((entry) => {
-    const marker = entry.id === currentId ? theme.brandStrong("  (current)") : "";
+    const marker = entry.id === currentId ? theme.brandStrong("● ") : "  ";
     const title = truncateText(entry.title, TITLE_LIMIT);
     const workspace = truncateText(entry.workspaceRoot, WORKSPACE_LIMIT);
-    return `${entry.id.slice(0, 8)}  ${title}  ${workspace}  ${entry.updatedAt}${marker}`;
+    return `${marker}${entry.id.slice(0, 8)}  ${title}  ${workspace}  ${entry.updatedAt}`;
   });
-  return [`Sessions (${sessions.length}):`, ...rows].join("\n");
+  const lines = [`Sessions (${total}):`, ...rows];
+  if (options.truncated === true) {
+    lines.push(`… showing ${sessions.length} of ${total} · /sessions all for the full list`);
+  }
+  return lines.join("\n");
 }
 
 export function formatSessionStatus(
@@ -262,12 +294,27 @@ export function formatSkillList(
     description: string;
     source: string;
   }[],
-  options: { activeName: string | null; theme: TerminalTheme },
+  options: { activeName: string | null; theme: TerminalTheme; columns?: number },
 ): string {
   const { activeName, theme } = options;
+  if (options.columns !== undefined && theme.enabled) {
+    const panel: CommandPanel = {
+      symbol: "◇",
+      title: `Skills · ${skills.length} total`,
+      sections: [
+        {
+          rows: skills.map((skill) => ({
+            label: activeName === skill.name ? `● ${skill.name}` : `  ${skill.name}`,
+            value: `${skill.source} · ${truncateText(skill.description, 120)}`,
+          })),
+        },
+      ],
+    };
+    return formatCommandPanel(panel, { columns: options.columns, theme });
+  }
   const rows = skills.map((skill) => {
-    const marker = skill.name === activeName ? theme.brandStrong("  (active)") : "";
-    return `${skill.name}  [${skill.source}]  ${truncateText(skill.description, 120)}${marker}`;
+    const marker = skill.name === activeName ? theme.brandStrong("● ") : "  ";
+    return `${marker}${skill.name}  [${skill.source}]  ${truncateText(skill.description, 120)}`;
   });
   return `Skills (${skills.length}):\n${rows.join("\n")}`;
 }
