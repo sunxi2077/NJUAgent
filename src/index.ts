@@ -233,6 +233,15 @@ export async function main(deps: BootstrapDeps): Promise<number> {
     store: sessionStore,
     skillRegistry,
     webSearchAvailable: activeConfig.tavilyApiKey !== undefined,
+    display: {
+      enhanced: theme.enabled,
+      columns: () => {
+        const columns = (stdout as NodeJS.WritableStream & { columns?: number }).columns;
+        return typeof columns === "number" && Number.isFinite(columns) && columns > 0
+          ? Math.floor(columns)
+          : 80;
+      },
+    },
     runSetup: async () => {
       const saved = await runSetup({
         prompt,

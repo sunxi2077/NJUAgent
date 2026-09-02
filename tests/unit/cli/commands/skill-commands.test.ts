@@ -96,6 +96,7 @@ function makeContext(overrides: {
       list: async () => ({ sessions: [], diagnostics: [] }),
     },
     webSearchAvailable: false,
+    display: { enhanced: false, columns: () => 80 },
     skillRegistry: {
       refresh: async () => ({
         skills: overrides.skills ?? [],

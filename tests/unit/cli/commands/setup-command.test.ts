@@ -25,6 +25,7 @@ function context(runSetup: () => Promise<boolean>): CommandContext {
     signal: new AbortController().signal,
     runSetup,
     webSearchAvailable: false,
+    display: { enhanced: false, columns: () => 80 },
     sessionManager: {} as CommandContext["sessionManager"],
     store: {} as CommandContext["store"],
     skillRegistry: {} as CommandContext["skillRegistry"],

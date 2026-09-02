@@ -73,6 +73,7 @@ function makeContext(overrides: Partial<FakeServices> = {}) {
     theme: createTheme({ enabled: false }),
     signal: new AbortController().signal,
     webSearchAvailable: false,
+    display: { enhanced: false, columns: () => 80 },
     skillRegistry: {
       refresh: async () => ({ skills: [], diagnostics: [] }),
       list: () => [],

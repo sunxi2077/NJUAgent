@@ -12,6 +12,10 @@ export function createStatusCommand(): SlashCommand {
           dirty: context.sessionManager.isDirty(),
           theme: context.theme,
           webSearchAvailable: context.webSearchAvailable,
+          context: context.sessionManager.contextStatus(),
+          ...(context.display.enhanced
+            ? { columns: context.display.columns() }
+            : {}),
         }),
       );
       return { kind: "continue", stateChanged: false };

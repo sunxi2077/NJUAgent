@@ -51,6 +51,12 @@ export type CommandContext = {
   skillRegistry: Pick<SkillRegistry, "refresh" | "list" | "resolve" | "diagnostics">;
   /** Whether the web_search tool is registered (derived from config, never the key). */
   webSearchAvailable: boolean;
+  /** Narrow display capability; commands never inspect process.stdout directly. */
+  display: {
+    enhanced: boolean;
+    /** Returns the current terminal columns; falls back to 80. */
+    columns: () => number;
+  };
   runSetup?: () => Promise<boolean>;
   signal: AbortSignal;
 };

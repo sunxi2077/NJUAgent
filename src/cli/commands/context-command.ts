@@ -8,7 +8,13 @@ export function createContextCommand(): SlashCommand {
     description: "Show context budget and checkpoint status",
     async execute(_args, context) {
       const status = context.sessionManager.contextStatus();
-      context.renderer.print(formatContextStatus(status, context.theme));
+      context.renderer.print(
+        formatContextStatus(
+          status,
+          context.theme,
+          context.display.enhanced ? context.display.columns() : undefined,
+        ),
+      );
       return { kind: "continue", stateChanged: false };
     },
   };

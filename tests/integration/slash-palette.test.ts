@@ -295,6 +295,7 @@ describe("slash palette integration", () => {
       store: {} as never,
       skillRegistry: {} as never,
       webSearchAvailable: false,
+      display: { enhanced: false, columns: () => 80 },
     } as unknown as CommandContext);
     expect(result).toEqual({ kind: "handled", stateChanged: false });
     expect(errors.join("")).toContain("Unknown command");

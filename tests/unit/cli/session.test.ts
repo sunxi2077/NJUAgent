@@ -370,6 +370,7 @@ describe("CliSession with command router", () => {
         },
         store: { list: async () => ({ sessions: [], diagnostics: [] }) },
         webSearchAvailable: false,
+        display: { enhanced: false, columns: () => 80 },
     skillRegistry: {
           refresh: async () => ({ skills: [], diagnostics: [] }),
           list: () => [],
@@ -423,6 +424,7 @@ describe("CliSession with command router", () => {
         },
         store: { list: async () => ({ sessions: [], diagnostics: [] }) },
         webSearchAvailable: false,
+        display: { enhanced: false, columns: () => 80 },
         skillRegistry: {
           refresh: async () => ({ skills: [], diagnostics: [] }),
           list: () => [],
@@ -477,6 +479,7 @@ describe("CliSession with command router", () => {
         },
         store: { list: async () => ({ sessions: [], diagnostics: [] }) },
         webSearchAvailable: false,
+        display: { enhanced: false, columns: () => 80 },
         skillRegistry: {
           refresh: async () => ({ skills: [], diagnostics: [] }),
           list: () => [],
