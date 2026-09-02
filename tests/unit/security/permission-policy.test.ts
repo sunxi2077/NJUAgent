@@ -170,3 +170,30 @@ describe("TrustedPermissionPolicy", () => {
     ).toMatchObject({ action: "ask" });
   });
 });
+
+describe("fetch_url permission modes", () => {
+  const request = { id: "call", name: "fetch_url", input: { url: "https://example.com/guide.md" } };
+  const reason = "Fetching a remote URL sends a request to an external service";
+
+  test("balanced asks once with the exact external-request reason", () => {
+    const policy = new BalancedPermissionPolicy();
+    expect(policy.decide(request)).toEqual({ action: "ask", reason });
+  });
+
+  test("cautious asks with the exact external-request reason", () => {
+    const policy = new CautiousPermissionPolicy();
+    expect(policy.decide(request)).toEqual({ action: "ask", reason });
+  });
+
+  test("trusted allows fetch_url automatically", () => {
+    const policy = new TrustedPermissionPolicy();
+    expect(policy.decide(request)).toEqual({ action: "allow" });
+  });
+
+  test("web_search stays ask in trusted because it sends a query to a search service", () => {
+    const policy = new TrustedPermissionPolicy();
+    expect(
+      policy.decide({ id: "call", name: "web_search", input: { query: "x" } }),
+    ).toMatchObject({ action: "ask" });
+  });
+});

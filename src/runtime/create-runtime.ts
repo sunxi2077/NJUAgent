@@ -44,6 +44,11 @@ import {
   createSearchTextTool,
 } from "../tools/search-tools.js";
 import { TavilySearchProvider } from "../web/tavily-search-provider.js";
+import {
+  NativeRemoteFetchProvider,
+  type RemoteFetchProvider,
+} from "../web/remote-fetch.js";
+import { createRemoteFetchTool } from "../web/remote-fetch-tool.js";
 import type { WebSearchProvider } from "../web/web-search.js";
 import { createWebSearchTool } from "../web/web-search-tool.js";
 
@@ -56,6 +61,8 @@ export type CreateRuntimeDeps = {
   provider?: ModelProvider;
   /** Test seam: inject a fake search provider instead of the real Tavily client. */
   webSearchProvider?: WebSearchProvider;
+  /** Test seam: inject a fake fetcher instead of the native fetch provider. */
+  remoteFetchProvider?: RemoteFetchProvider;
 };
 
 /**
@@ -140,6 +147,18 @@ export async function createRuntime(
       }),
     );
   }
+
+  // fetch_url is always available: unlike web search it needs no API key.
+  const remoteFetchProvider = deps.remoteFetchProvider ??
+    new NativeRemoteFetchProvider({
+      timeoutMs: deps.config.remoteFetchTimeoutMs,
+    });
+  registry.register(
+    createRemoteFetchTool({
+      provider: remoteFetchProvider,
+      maxBytes: deps.config.remoteFetchMaxBytes,
+    }),
+  );
 
   const permissionPolicy = permissionPolicyFor(session.permissionMode);
   const evidenceLedger = new EvidenceLedger({ state: session.evidence });

@@ -25,6 +25,11 @@ const metadataTools = new Set(["plan_write"]);
 // External-network tools always need approval because the query leaves the machine.
 const externalTools = new Set(["web_search"]);
 const WEB_SEARCH_REASON = "Web search sends the query to an external service";
+// Known-URL external reads: a fetch leaves the machine, so balanced and
+// cautious ask; trusted mode auto-allows because the exact URL was given.
+const urlFetchTools = new Set(["fetch_url"]);
+const URL_FETCH_REASON =
+  "Fetching a remote URL sends a request to an external service";
 
 function commandText(request: ToolExecutionRequest): string | undefined {
   if (request.name !== "run_command" || typeof request.input !== "object" || request.input === null) {
@@ -98,6 +103,9 @@ export class BalancedPermissionPolicy implements PermissionPolicy {
     if (externalTools.has(request.name)) {
       return { action: "ask", reason: WEB_SEARCH_REASON };
     }
+    if (urlFetchTools.has(request.name)) {
+      return { action: "ask", reason: URL_FETCH_REASON };
+    }
     const command = commandText(request);
     if (command !== undefined) {
       // The workspace guard runs before every other check: an obvious escape
@@ -120,6 +128,9 @@ export class CautiousPermissionPolicy implements PermissionPolicy {
     if (externalTools.has(request.name)) {
       return { action: "ask", reason: WEB_SEARCH_REASON };
     }
+    if (urlFetchTools.has(request.name)) {
+      return { action: "ask", reason: URL_FETCH_REASON };
+    }
     const command = commandText(request);
     if (command !== undefined) {
       const guarded = guardWorkspaceCommand(command);
@@ -141,14 +152,18 @@ export class CautiousPermissionPolicy implements PermissionPolicy {
 /**
  * Opt-in high-trust mode: fewer prompts for a workspace you trust. The hard
  * workspace guard still runs first, so outside-workspace and high-risk
- * commands stay blocked exactly as in every other mode. File tools and any
- * run_command that passes the guard are auto-allowed; external tools (web
- * search) and unrecognized tool names still require a prompt, so a future
- * privileged tool cannot silently inherit trusted-mode approval.
+ * commands stay blocked exactly as in every other mode. File tools, fetch_url
+ * (the model was given an exact URL), and any run_command that passes the
+ * guard are auto-allowed; web search and unrecognized tool names still
+ * require a prompt, so a future privileged tool cannot silently inherit
+ * trusted-mode approval.
  */
 export class TrustedPermissionPolicy implements PermissionPolicy {
   decide(request: ToolExecutionRequest): PermissionDecision {
     if (readOnlyTools.has(request.name) || writeTools.has(request.name) || metadataTools.has(request.name)) {
+      return { action: "allow" };
+    }
+    if (urlFetchTools.has(request.name)) {
       return { action: "allow" };
     }
     if (externalTools.has(request.name)) {
