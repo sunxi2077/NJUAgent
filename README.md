@@ -51,11 +51,11 @@ npm start -- --workspace /path/to/project
 npm start -- --workspace /path/to/project --permission-mode cautious --debug
 ```
 
-`nju-agent` becomes available as a short command only after an explicit link or install step (optional):
+`njuagent` becomes available as a short command only after an explicit link or install step (optional):
 
 ```bash
 npm link
-nju-agent --workspace /path/to/project
+njuagent /path/to/project
 ```
 
 Run `npm start -- --help` (or `node dist/index.js --help`) to see usage; help works without any API credentials.

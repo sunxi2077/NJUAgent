@@ -16,7 +16,6 @@ class FakePrompt implements Prompt {
   confirmQuestions: string[] = [];
   confirmResult = true;
   sigintHandler: (() => void) | undefined;
-  interrupted = false;
   closed = false;
 
   read(promptText: string, options?: unknown): Promise<string | null> {
@@ -26,9 +25,6 @@ class FakePrompt implements Prompt {
     const queued = this.#queuedInputs.shift();
     if (queued !== undefined) {
       return Promise.resolve(queued);
-    }
-    if (this.interrupted) {
-      return Promise.resolve(null);
     }
     return new Promise((resolve) => {
       this.#pendingReads.push(resolve);
@@ -54,7 +50,6 @@ class FakePrompt implements Prompt {
   }
 
   interrupt(): void {
-    this.interrupted = true;
     const pending = this.#pendingReads.shift();
     if (pending !== undefined) {
       pending(null);
@@ -101,9 +96,9 @@ function delay(ms: number): Promise<void> {
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 1000): Promise<void> {
-  const startedAt = Date.now();
+  const startedAt = performance.now();
   while (!condition()) {
-    if (Date.now() - startedAt > timeoutMs) {
+    if (performance.now() - startedAt > timeoutMs) {
       throw new Error("waitFor timed out");
     }
     await delay(1);
@@ -203,6 +198,7 @@ describe("CliSession", () => {
     prompt.pressCtrlC();
 
     expect(receivedSignal?.aborted).toBe(true);
+    expect(renderer.printed).toContain("Cancelling current task…");
 
     releaseRun();
     prompt.pushInput("/exit");
@@ -211,15 +207,33 @@ describe("CliSession", () => {
     expect(prompt.closed).toBe(true);
   });
 
-  test("Ctrl-C at the idle input prompt exits the session", async () => {
+  test("first Ctrl-C at the idle prompt asks for confirmation", async () => {
     const prompt = new FakePrompt();
     const renderer = new MemoryRenderer();
     const runTurn: RunTurn = async () => cancelledResult();
+    const session = new CliSession({ prompt, renderer, runTurn });
+    const started = session.start();
+
+    await waitFor(() => prompt.readCount === 1);
+
+    prompt.pressCtrlC();
+    await waitFor(() => prompt.readCount === 2);
+
+    expect(renderer.printed).toContain("Press Ctrl-C again to exit.");
+    expect(prompt.closed).toBe(false);
+
+    prompt.pushInput("/exit");
+    await started;
+  });
+
+  test("second Ctrl-C flushes and exits", async () => {
+    const prompt = new FakePrompt();
+    const renderer = new MemoryRenderer();
     let flushCalls = 0;
     const session = new CliSession({
       prompt,
       renderer,
-      runTurn,
+      runTurn: async () => cancelledResult(),
       flushBeforeExit: async () => {
         flushCalls += 1;
       },
@@ -227,11 +241,34 @@ describe("CliSession", () => {
     const started = session.start();
 
     await waitFor(() => prompt.readCount === 1);
-
+    prompt.pressCtrlC();
+    await waitFor(() => prompt.readCount === 2);
     prompt.pressCtrlC();
     await started;
 
     expect(flushCalls).toBe(1);
+    expect(prompt.closed).toBe(true);
+  });
+
+  test("an empty readline event after the first Ctrl-C does not reset exit confirmation", async () => {
+    const prompt = new FakePrompt();
+    const renderer = new MemoryRenderer();
+    const session = new CliSession({
+      prompt,
+      renderer,
+      runTurn: async () => cancelledResult(),
+    });
+    const started = session.start();
+
+    await waitFor(() => prompt.readCount === 1);
+    prompt.pressCtrlC();
+    await waitFor(() => prompt.readCount === 2);
+    prompt.pushInput("");
+    await waitFor(() => prompt.readCount === 3);
+    prompt.pressCtrlC();
+    await started;
+
+    expect(renderer.printed).toEqual(["Press Ctrl-C again to exit."]);
     expect(prompt.closed).toBe(true);
   });
 

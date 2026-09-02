@@ -111,6 +111,9 @@ type ParsedArgs = {
 
 function assignOption(parsed: ParsedArgs, option: string, value: string): void {
   if (option === "--workspace") {
+    if (parsed.workspaceRoot !== undefined) {
+      throw new ConfigError("Workspace may be specified only once");
+    }
     parsed.workspaceRoot = value;
     return;
   }
@@ -149,6 +152,13 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     }
     if (arg.startsWith("--permission-mode=")) {
       assignOption(parsed, "--permission-mode", arg.slice("--permission-mode=".length));
+      continue;
+    }
+    if (!arg.startsWith("-")) {
+      if (parsed.workspaceRoot !== undefined) {
+        throw new ConfigError("Workspace may be specified only once");
+      }
+      parsed.workspaceRoot = arg;
       continue;
     }
     throw new ConfigError(`Unknown option: ${arg}`);

@@ -94,7 +94,7 @@ describe("AgentRunner", () => {
     ]);
   });
 
-  test("returns model_failed and does not append a partial assistant message when completion is missing", async () => {
+  test("returns model_failed and rolls back the user turn when completion is missing", async () => {
     const provider = new ScriptedProvider([[{ type: "text_delta", text: "partial" }]]);
     const history = new ConversationHistory();
     const runner = new AgentRunner({
@@ -108,8 +108,29 @@ describe("AgentRunner", () => {
     const result = await runner.run("fix it", new AbortController().signal);
 
     expect(result).toMatchObject({ status: "model_failed", steps: 1, toolCalls: 0 });
+    expect(history.snapshot()).toEqual([]);
+  });
+
+  test("returns model_failed and rolls back the user turn when the provider throws", async () => {
+    const provider = new ScriptedProvider([]);
+    const history = ConversationHistory.from([
+      { role: "user", content: [{ type: "text", text: "previous question" }] },
+      textAssistant("previous answer"),
+    ]);
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools: emptyTools,
+      maxSteps: 4,
+      systemPrompt: "Be precise.",
+    });
+
+    const result = await runner.run("fix it", new AbortController().signal);
+
+    expect(result).toMatchObject({ status: "model_failed", steps: 1, toolCalls: 0 });
     expect(history.snapshot()).toEqual([
-      { role: "user", content: [{ type: "text", text: "fix it" }] },
+      { role: "user", content: [{ type: "text", text: "previous question" }] },
+      textAssistant("previous answer"),
     ]);
   });
 

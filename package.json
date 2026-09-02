@@ -5,7 +5,7 @@
   "description": "A small, independently implemented command-line coding agent.",
   "type": "module",
   "bin": {
-    "nju-agent": "dist/index.js"
+    "njuagent": "dist/index.js"
   },
   "engines": {
     "node": ">=20"

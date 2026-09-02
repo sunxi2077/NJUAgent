@@ -2,10 +2,10 @@ export const HELP_TEXT = `NJUAgent - a local command-line coding agent
 
 Usage:
   npm start -- --workspace <path> [--permission-mode balanced|cautious] [--debug]
-  nju-agent --workspace <path> [--permission-mode balanced|cautious] [--debug]
+  njuagent [path] [--permission-mode balanced|cautious] [--debug]
 
 Options:
-  --workspace <path>           Workspace root; defaults to the current directory
+  path, --workspace <path>     Workspace root; defaults to the current directory
   --permission-mode <mode>     balanced (default) or cautious
   --debug                      Print sanitized startup diagnostics
   -h, --help                   Show this help without requiring API credentials

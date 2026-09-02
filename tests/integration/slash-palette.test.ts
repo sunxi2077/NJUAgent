@@ -311,6 +311,7 @@ describe("slash palette integration", () => {
     expect(suspendAt).toBeGreaterThanOrEqual(0);
     expect(resumeAt).toBeGreaterThan(suspendAt);
     expect(presenter.lastSnapshot?.active).toBe(true);
+    inputRouter.press("", { sequence: "\x1b", name: "escape", ctrl: false, meta: false, shift: false });
     pressEnter(inputRouter);
     await pending;
   });

@@ -60,6 +60,9 @@ export function assertValidHistory(messages: readonly Message[]): void {
     }
 
     if (message.role === "assistant") {
+      if (message.content.length === 0) {
+        throw new Error("Assistant message cannot be empty");
+      }
       const calls = toolCalls(message);
       for (const call of calls) {
         if (knownCallIds.has(call.id)) {

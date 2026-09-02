@@ -134,6 +134,14 @@ describe("loadConfig (compatibility wrapper)", () => {
     expect(inline.workspaceRoot).toBe("/tmp/b");
   });
 
+  test("accepts one positional workspace path", () => {
+    expect(loadConfig(validEnv, ["."]).workspaceRoot).toBe(".");
+    expect(loadConfig(validEnv, ["/tmp/project", "--debug"])).toMatchObject({
+      workspaceRoot: "/tmp/project",
+      debug: true,
+    });
+  });
+
   test("parses --debug and --permission-mode", () => {
     const config = loadConfig(validEnv, ["--debug", "--permission-mode", "cautious"]);
     expect(config.debug).toBe(true);
@@ -149,6 +157,7 @@ describe("loadConfig (compatibility wrapper)", () => {
   test("rejects unknown options and options without a value", () => {
     expect(() => loadConfig(validEnv, ["--nope"])).toThrow(/Unknown option/u);
     expect(() => loadConfig(validEnv, ["--workspace"])).toThrow(/requires a value/u);
+    expect(() => loadConfig(validEnv, [".", "/tmp/project"])).toThrow(/workspace.*once/iu);
   });
 });
 

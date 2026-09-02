@@ -232,6 +232,25 @@ describe("AnthropicProvider", () => {
     });
   });
 
+  test("rejects a completed stream that contains no assistant content", async () => {
+    const client = new FixtureClient([
+      messageStart(),
+      messageDelta("end_turn", 0),
+      { type: "message_stop" },
+    ]);
+    const provider = new AnthropicProvider({
+      model: "deepseek-test",
+      maxTokens: 2048,
+      client,
+    });
+
+    await expect(collect(provider, request())).rejects.toMatchObject({
+      name: "ProviderError",
+      kind: "protocol",
+      retryable: false,
+    });
+  });
+
   test.each([
     [APIError.generate(401, {}, "unauthorized", new Headers()), false],
     [APIError.generate(429, {}, "limited", new Headers({ "retry-after": "2" })), true],

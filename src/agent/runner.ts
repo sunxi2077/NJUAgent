@@ -48,6 +48,7 @@ export class AgentRunner {
     let steps = 0;
     let toolCalls = 0;
     let lastInputTokens: number | undefined;
+    const historyBeforeRun = this.options.history.snapshot();
     this.options.stopGate?.beginRun?.();
     this.options.history.appendUserText(userText);
 
@@ -159,6 +160,7 @@ export class AgentRunner {
             durationMs: performance.now() - startedAt,
           });
         }
+        this.options.history.replace(historyBeforeRun);
         return this.finish({
           status: "model_failed",
           message: error instanceof Error ? error.message : String(error),
@@ -169,6 +171,7 @@ export class AgentRunner {
       }
 
       if (completed === undefined) {
+        this.options.history.replace(historyBeforeRun);
         return this.finish({
           status: "model_failed",
           message: "Provider stream ended without a completed assistant message",

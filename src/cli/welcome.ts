@@ -28,7 +28,7 @@ const NJU_LOGO = [
   "╚═╝  ╚═══╝ ╚════╝  ╚═════╝",
 ] as const;
 
-const HELP_LINE = "Type /help for commands · Ctrl-C cancels";
+const HELP_LINE = "Type /help for commands · Ctrl-C cancels · twice exits";
 const PLAIN_HELP_LINE = "Type /help for usage, or enter a task.";
 
 type Cell = { text: string; style?: (text: string) => string };

@@ -1,14 +1,26 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
+import { pathToFileURL } from "node:url";
 
 import type { Prompt, ReadlinePromptOptions } from "../../src/cli/prompt.js";
 import { TerminalRenderer, type TerminalRendererOptions } from "../../src/cli/renderer.js";
-import { main, type BootstrapDeps } from "../../src/index.js";
+import { isDirectRun, main, type BootstrapDeps } from "../../src/index.js";
 
 const temporaryDirectories: string[] = [];
+
+test("recognizes a symlinked executable as a direct run", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "nju-entry-"));
+  temporaryDirectories.push(directory);
+  const target = path.join(directory, "index.js");
+  const link = path.join(directory, "njuagent");
+  await writeFile(target, "#!/usr/bin/env node\n");
+  await symlink(target, link);
+
+  expect(isDirectRun(pathToFileURL(target).href, link)).toBe(true);
+});
 
 afterEach(async () => {
   await Promise.all(

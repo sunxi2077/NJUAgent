@@ -7,6 +7,15 @@ import {
 } from "../../../src/agent/messages.js";
 
 describe("assertValidHistory", () => {
+  test("rejects an assistant message with no content blocks", () => {
+    const history: Message[] = [
+      { role: "user", content: [{ type: "text", text: "continue" }] },
+      { role: "assistant", content: [] },
+    ];
+
+    expect(() => assertValidHistory(history)).toThrow(/assistant.*empty/i);
+  });
+
   test("accepts a text turn followed by an ordered tool call and result batch", () => {
     const history: Message[] = [
       { role: "user", content: [{ type: "text", text: "inspect files" }] },

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { HELP_TEXT, isHelpRequest } from "./cli/help.js";
 import {
@@ -282,11 +283,20 @@ const deps: BootstrapDeps = {
   isTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
 };
 
+export function isDirectRun(moduleUrl: string, entryPath: string | undefined): boolean {
+  if (entryPath === undefined) {
+    return false;
+  }
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(entryPath);
+  } catch {
+    return moduleUrl === pathToFileURL(entryPath).href;
+  }
+}
+
 // Only start the process when this module is the entry point; importing it in
 // tests must not run the executable.
-const isDirectRun = process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isDirectRun) {
+if (isDirectRun(import.meta.url, process.argv[1])) {
   void main(deps).then(
     (exitCode) => {
       process.exitCode = exitCode;

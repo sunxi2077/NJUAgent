@@ -17,6 +17,7 @@ describe("CLI help", () => {
 
   test("documents run syntax, flags, required environment, and exit", () => {
     expect(HELP_TEXT).toContain("Usage:");
+    expect(HELP_TEXT).toContain("njuagent [path]");
     expect(HELP_TEXT).toContain("--workspace");
     expect(HELP_TEXT).toContain("--permission-mode");
     expect(HELP_TEXT).toContain("ANTHROPIC_API_KEY");

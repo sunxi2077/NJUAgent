@@ -32,6 +32,8 @@ export class CliSession {
   readonly #inputPrompt: string;
   #current: AbortController | undefined;
   #exitRequested = false;
+  #resumeAfterSigint = false;
+  #exitConfirmationPending = false;
 
   constructor(options: CliSessionOptions) {
     this.#prompt = options.prompt;
@@ -54,13 +56,21 @@ export class CliSession {
         ? undefined
         : { slashCommands: this.#router.descriptors() };
       const text = await this.#prompt.read(this.#inputPrompt, readOptions);
-      if (text === null || this.#exitRequested) {
+      if (this.#exitRequested) {
+        break;
+      }
+      if (text === null) {
+        if (this.#resumeAfterSigint) {
+          this.#resumeAfterSigint = false;
+          continue;
+        }
         break;
       }
       const trimmed = text.trim();
       if (trimmed === "") {
         continue;
       }
+      this.#exitConfirmationPending = false;
       if (this.#router !== undefined && this.#commandContext !== undefined) {
         const controller = new AbortController();
         this.#current = controller;
@@ -94,14 +104,22 @@ export class CliSession {
 
   #handleSigint(): void {
     if (this.#current !== undefined) {
-      // First Ctrl-C during a run cancels the current turn and returns to input.
+      this.#renderer.print("Cancelling current task…");
       this.#current.abort();
       this.#prompt.interrupt();
-    } else {
-      // Ctrl-C at the idle prompt (or while no turn is running) exits the session.
+      return;
+    }
+
+    if (this.#exitConfirmationPending) {
       this.#exitRequested = true;
       this.#prompt.interrupt();
+      return;
     }
+
+    this.#exitConfirmationPending = true;
+    this.#resumeAfterSigint = true;
+    this.#prompt.interrupt();
+    this.#renderer.print("Press Ctrl-C again to exit.");
   }
 
   async #runTurnSafe(text: string): Promise<void> {

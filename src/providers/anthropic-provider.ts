@@ -189,6 +189,12 @@ function assembleMessage(blocks: ReadonlyMap<number, PendingBlock>): AssistantMe
       input,
     });
   }
+  if (content.length === 0) {
+    throw new ProviderError("Model completed without assistant content", {
+      kind: "protocol",
+      retryable: false,
+    });
+  }
   return { role: "assistant", content };
 }
 

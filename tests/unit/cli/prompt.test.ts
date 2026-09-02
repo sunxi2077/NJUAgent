@@ -450,6 +450,22 @@ describe("ReadlinePrompt slash palette", () => {
     await pending;
   });
 
+  test("Enter completes the selected command when only / has been typed", async () => {
+    const { prompt, rl, router, presenter } = enhancedPrompt();
+    const pending = prompt.read("› ", { slashCommands: COMMANDS });
+    pressText(router, "/");
+    await Promise.resolve();
+    pressKey(router, "down", "\x1b[B");
+    expect(presenter.renders.at(-1)!.selectedIndex).toBe(1);
+
+    pressKey(router, "return", "\r");
+
+    expect(rl.line).toBe("/goal ");
+    expect(presenter.clearCalls).toBeGreaterThan(0);
+    rl.emitLine("/goal ");
+    await pending;
+  });
+
   test("Tab completes the selected command with a trailing space", async () => {
     const { prompt, rl, router, presenter } = enhancedPrompt();
     const pending = prompt.read("› ", { slashCommands: COMMANDS });

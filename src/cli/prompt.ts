@@ -350,8 +350,9 @@ export class ReadlinePrompt implements Prompt {
       return "forward";
     }
     const selected = this.#completion.selected();
-    if (selected !== undefined && prefix !== "") {
-      // A prefix with a selection completes without submitting.
+    if (selected !== undefined) {
+      // A selected command completes without submitting, including a menu
+      // opened by a bare "/" with no typed prefix yet.
       this.#replaceCurrentLine(`/${selected.name} `);
       this.#closePalette();
       return "consume";
