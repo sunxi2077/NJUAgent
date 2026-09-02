@@ -1,246 +1,71 @@
 # NJUAgent
 
-A small, independently implemented command-line coding agent. Give it a natural-language programming task in a workspace and it plans and executes its own steps: reading and searching code, editing files, and running builds and tests — until it decides it is done.
+NJUAgent 是一个使用 TypeScript 与 Node.js 独立实现的命令行编程智能体。用户给出任务后，它会规划步骤，在本地读取、搜索和修改代码，运行测试与构建，并根据结果继续行动。项目不封装现成 Agent；循环、工具协议、上下文与权限控制均由本仓库实现。模型通过 Anthropic Messages API 接入 DeepSeek 兼容端点。
 
-NJUAgent does **not** wrap Claude Code, Codex, or any agent framework. The agent loop, tool protocol, conversation history, context control, permission checks, and error handling are all implemented in this repository. `@anthropic-ai/sdk` is used only as a plain Messages API client.
+仓库：[GitHub](https://github.com/sunxi2077/NJUAgent)
 
-## Requirements
+## 主要能力
 
-- Node.js >= 20
-- npm
-- A model endpoint that speaks the Anthropic Messages API (the default target is DeepSeek's Anthropic-compatible endpoint)
+- 文件读写、精确编辑、代码搜索和命令执行；
+- `web_search` 联网搜索，`fetch_url` 获取指定网页（GitHub blob/tree 链接自动走 Contents API，只读、不写文件）；
+- Goal 定义完成条件，Plan 展示执行进度；输出被 token 上限截断时会自动续写重试（≤2 次），不再直接失败；
+- 从项目或用户目录加载 Skills（frontmatter 接受 `name`、`description` 与可选的 `license`），显式 `/skill <name>` 激活；
+- 每个工具完成渲染一张紧凑结果卡，省略行给出 `… N more lines hidden · /tool T-…`，`/tool` 按 T- 引用或 id 前缀查看保留的完整输出；
+- 保存与恢复会话，主动或自动压缩上下文；
+- 流式 Markdown、Slash 菜单、Token 面板与 Terminal Cards。
 
-## Install and build
+## 快速开始
 
-```bash
-npm install
-npm run build
-```
-
-## Configuration
-
-NJUAgent is a normal command-line application: configuration comes from environment variables plus an optional per-user config file, and the only supported CLI flags are `--workspace`, `--permission-mode` and `--debug`. Copy `.env.example` and export the values (the program reads the process environment, not `.env`).
-
-On first run (TTY only), missing Base URL or Model triggers an interactive setup that saves only those non-secret values — Base URL, Model, and permission mode — to `config.json` under the application home (`NJU_AGENT_HOME`, default `~/.nju-agent`). `ANTHROPIC_API_KEY` is read **only** from the process environment and is never written to disk.
-
-Permission modes (`--permission-mode` or `/setup`): `cautious` asks before writes and commands, `balanced` (default) auto-allows safe workspace commands, and `trusted` auto-allows any workspace-local command that passes the hard guard — **fewer prompts for a workspace you trust; outside-workspace and high-risk commands remain blocked**. There is no “unrestricted” mode, and the model can never change the mode for you.
-
-| Variable | Required | Default | Meaning |
-| --- | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | yes | — | API key; environment only, never stored on disk |
-| `ANTHROPIC_BASE_URL` | yes* | — | e.g. `https://api.deepseek.com/anthropic` |
-| `MODEL_ID` | yes* | — | model name supported by the endpoint |
-| `NJU_AGENT_HOME` | no | `~/.nju-agent` | application home (config, sessions, skills) |
-| `AGENT_MAX_STEPS` | no | `20` | max model requests per user turn |
-| `AGENT_MAX_TOKENS` | no | `8192` | `max_tokens` per reply (raise to 12000 for big single writes) |
-| `COMMAND_TIMEOUT_MS` | no | `120000` | default `run_command` timeout |
-| `TOOL_OUTPUT_MAX_BYTES` | no | `32768` | max tool output returned to the model |
-| `UI_OUTPUT_MAX_BYTES` | no | `65536` | maximum command output shown live per tool call |
-| `TAVILY_API_KEY` | no | — | enables the permission-gated `web_search` tool |
-| `WEB_SEARCH_TIMEOUT_MS` | no | `15000` | web search request timeout |
-| `WEB_SEARCH_MAX_CONTENT_CHARS` | no | `6000` | per-result content cap for `web_search` |
-| `REMOTE_FETCH_TIMEOUT_MS` | no | `15000` | `fetch_url` request timeout |
-| `REMOTE_FETCH_MAX_BYTES` | no | `32768` | `fetch_url` byte cap per resource (1024–65536) |
-| `MODEL_INPUT_COST_PER_MTOKENS` | no | — | optional USD price per million input tokens (set with the output price) |
-| `MODEL_OUTPUT_COST_PER_MTOKENS` | no | — | optional USD price per million output tokens (set with the input price) |
-
-`*` Base URL and Model may come from the persisted config instead of the environment (saved by setup); the API Key always comes from the environment.
-
-## Usage
-
-Run from the repository root:
+需要 Node.js 20+。复制 `.env.example` 为 `.env`，填写 API 配置。密钥只从环境变量读取，不会保存到会话中。
 
 ```bash
 npm install
 npm run build
-npm start -- --workspace /path/to/project
-npm start -- --workspace /path/to/project --permission-mode cautious --debug
-npm start -- --workspace /path/to/project --permission-mode trusted --debug
-```
-
-`njuagent` becomes available as a short command only after an explicit link or install step (optional):
-
-```bash
 npm link
-njuagent /path/to/project
+set -a; source .env; set +a
+njuagent .
 ```
 
-Run `npm start -- --help` (or `node dist/index.js --help`) to see usage; help works without any API credentials.
+`.` 表示当前目录。权限模式通过 `--permission-mode cautious|balanced|trusted` 选择：`cautious` 写入/命令都要确认；`balanced`（默认）自动放行安全的工作区命令；`trusted` 进一步自动放行过 guard 的工作区命令与 `fetch_url`——hard guard（sudo、`~`、绝对路径逃逸、`git push`、管道到 shell 等）在任何模式下都不可绕过。模型永远不能自行修改权限模式。
 
-Then type a task, e.g.:
+## 常用命令
 
-```
-Add input validation to parsePort in src/validate.mjs and make the tests pass.
-```
+输入 `/` 浏览全部命令，例如：
 
-- `/exit` or `Ctrl-C` at the prompt exits.
-- `Ctrl-C` during a run cancels the current turn and returns to the prompt.
-- Permission prompts (`Allow ... (y/N)`) appear for risky operations; declining returns the refusal to the model as a tool result.
-
-Non-TTY output (pipes, CI) degrades automatically to plain newline-safe records with no colors or cursor control; set `NO_COLOR` for the same behavior on a TTY.
-
-### Slash commands
-
-Input starting with `/` is handled locally and never reaches the model; use `//` to send literal text starting with a slash:
-
-```
-/help                        Show available commands (grouped)
-/status                      Show the session dashboard (context bar + usage)
-/sessions                    List saved sessions
-/resume <id>                 Resume a saved session (full UUID or unique prefix)
-/new                         Start a new session
-/history [1-100]             Show recent messages
-/tool <id>                   Show retained output for a tool call (T- reference, full id, or unique prefix)
-/context                     Show context budget and checkpoint status
-/compact [focus]             Summarize the covered conversation
-/plan [clear]                Show or clear the model-maintained execution plan
-/goal [clear|<condition>]    Set, show, or clear the explicit completion goal
-/skills                      List available skills
-/skill <name>|off            Activate or deactivate a skill
-/setup                       Update model and permission configuration
-/exit                        Save the current session and exit
+```text
+/help     命令分组帮助（TTY 下为卡片）
+/status   会话状态面板（含上下文压力、token 用量与费用估算）
+/tool <T-… | id 前缀>   查看某次工具调用的保留输出
+/goal [clear|<条件>]    设置/查看/清除完成目标
+/plan [clear]           查看/清除执行计划
+/skills · /skill <name>|off   列出 / 激活 / 停用 Skill
+/context · /compact [focus]   上下文状态与压缩
+/sessions · /resume <id> · /new   会话管理
+/setup · /exit   配置 / 退出
 ```
 
-### Slash command palette
+## 配置
 
-On a real interactive TTY, typing `/` on an empty input line immediately shows a filterable command list under the prompt:
+环境变量说明见 `.env.example`，常用项：
 
-- type an ASCII prefix (`go`, `sta`, …) to filter the candidates case-insensitively, applied on every keypress;
-- `↑` / `↓` move the selection through **all** matches (wrapping at the ends); the menu shows a 6-row scrolling window with the current range in the footer (e.g. `1–6 / 14`);
-- `Tab` (or `Enter` on a prefix) completes the selected command as `/<name> ` without executing it;
-- `Enter` on a fully typed command (`/help`) runs it directly, with no extra confirmation;
-- `Esc` closes the palette and keeps the current input; `Backspace` back to an empty line also closes it;
-- typing a space leaves command-name mode and hands the arguments back to normal readline editing, so Chinese parameters, IME, and pasted text behave exactly as before (`/goal 完成测试` keeps every character);
-- `//literal` still escapes to literal text; an unknown command still reports `Unknown command`;
-- parameter completion, fuzzy search, and mouse interaction are **not** part of this palette;
-- non-TTY, `NO_COLOR`, and `TERM=dumb` keep the plain input line with no dynamic menu or ANSI output.
+- `AGENT_MAX_TOKENS`：单次回复 token 上限，默认 `8192`（大文件单次写入场景可调到 ~12000）；
+- `REMOTE_FETCH_TIMEOUT_MS` / `REMOTE_FETCH_MAX_BYTES`：`fetch_url` 超时（默认 15000ms）与单资源字节上限（默认 32768，1024–65536）；
+- `WEB_SEARCH_TIMEOUT_MS` / `WEB_SEARCH_MAX_CONTENT_CHARS`：`web_search` 相关；
+- `NJU_AGENT_HOME`：应用目录（配置、会话、Skills，默认 `~/.nju-agent`）；`NO_COLOR`：禁用颜色与控制字符。
 
-The command list comes only from the registered slash commands — there is no second hard-coded list.
+## 安全与验证
 
-### Sessions
+模型决定下一步操作，宿主程序负责安全边界：
 
-Each session is stored as one versioned JSON file under `$NJU_AGENT_HOME/sessions` (default `~/.nju-agent/sessions`), containing the complete valid message history, context checkpoint state, and run statistics. A new session starts on every launch (the welcome panel shows the most recent session with a `/resume` hint); the API Key is never persisted; a corrupt session file is reported as a warning without blocking the others. There is currently **no cross-session text search**.
-
-### Context
-
-Token numbers are **estimates** (`CONTEXT_WINDOW_TOKENS` default 48,000, `CONTEXT_COMPACT_RATIO` 0.70, `CONTEXT_SAFETY_TOKENS` 2,048). When the estimate crosses the compact threshold, old tool results are shrunk first; if that is not enough, a no-tools model call summarizes the newly covered prefix into a cumulative checkpoint. The complete transcript always stays in the session; every request carries the summary plus only the post-checkpoint tail, and never exceeds the hard input budget (`window − max_tokens − safety`). `/compact [focus]` forces a checkpoint (Ctrl-C cancels it); a failed or cancelled compaction keeps the previous checkpoint.
-
-### Skills
-
-A Skill is **plain prompt text**, not executable code: one `SKILL.md` per directory, with a minimal frontmatter — `name` and `description`, plus an optional documentation-only `license` field — at most 32 KiB, under `$NJU_AGENT_HOME/skills/<name>/SKILL.md` (user) or `<workspace>/.nju-agent/skills/<name>/SKILL.md` (project). Project skills override same-name user skills; symlink escapes and oversized files are rejected as warnings. Only explicit `/skill <name>` activates one skill per session (persisted and restored on resume); `/skill off` deactivates. Skill content cannot weaken workspace, permission, timeout, output, or credential policies.
-
-Installing an external Skill conversationally: paste a link to a raw `SKILL.md` (for GitHub, use the `raw.githubusercontent.com` URL, e.g. `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/SKILL.md`). NJUAgent reads only that file as plain text, inspects its frontmatter and content without executing anything inside it, and saves it at `<workspace>/.nju-agent/skills/<name>/SKILL.md` — never under `~/.claude`, `~/.codex`, or your home directory. It then reports the discovered name and waits for you to activate it with `/skill <name>`; it never activates a Skill or runs its install scripts itself. The download command still goes through the normal permission policy (it is asked in `balanced`/`cautious`; it may proceed automatically in `trusted` only when it passes the workspace guard).
-
-A complete paste-able example:
-
-```
-Install the frontend-ui Skill from https://raw.githubusercontent.com/<owner>/<repo>/<ref>/SKILL.md
-```
-
-NJUAgent downloads only that `SKILL.md`, saves it as `<workspace>/.nju-agent/skills/frontend-ui/SKILL.md`, prints the discovered name, and asks you to run `/skill frontend-ui` yourself. `/skills` lists what is available, including project skills discovered under `.nju-agent/skills`.
-
-With `fetch_url`, ordinary GitHub links work without shell staging — paste a **blob** URL (not raw):
-
-```
-Read this GitHub file URL with fetch_url, inspect it, and save it as a project Skill:
-https://github.com/<owner>/<repo>/blob/main/skills/<name>/SKILL.md
-```
-
-NJUAgent fetches the file through the public Contents API (one approval card in `balanced`/`cautious`, none in `trusted`), returns it framed as untrusted text for inspection, and writes it only via a workspace-relative `write_file` to `<workspace>/.nju-agent/skills/<name>/SKILL.md`. You then run `/skills` to confirm and `/skill <name>` to activate — never fetched text that bypasses those steps.
-
-### Plans and goals
-
-- **Plans**: for multi-step tasks the model can maintain an execution plan with the `plan_write` tool (at most 12 steps, one `in_progress` at a time). The CLI shows each update as a compact progress panel (`◆ Plan 3/5`). `/plan` displays the current plan and `/plan clear` empties it.
-- **Goals**: `/goal <completion condition>` enables explicit completion verification. The next ordinary message runs under that goal: when the worker would stop, a no-tools model call checks the condition against the current Plan and Evidence, and the host refuses `satisfied` unless the plan is finished and every workspace edit is followed by a fresh successful verification command (`npm test`, `npm run build|lint|typecheck|check`, `vitest`, `pytest`, `tsc`, `cargo test|check|build`, `go test`, …).
-- A goal triggers at most **3 automatic continuations** per user message; if the 4th check is still not satisfied the run ends `goal_incomplete` and the goal stays active. `verified` and `cancelled` goals stop the checks until you set a new one. `/goal` and `/goal clear` view and remove it.
-- Evidence observes only the tools NJUAgent itself runs: writes/edits bump a workspace revision, and commands are recorded with exit code, timeout, cancellation and revision. If you edit files in another terminal, those edits do **not** count as workspace changes (and cannot invalidate verification).
-- **Status dashboard**: `/status` shows session identity, a width-safe context pressure bar (against the hard input limit, colored by load), cumulative per-session request/input/output token totals, and a token-cost `Estimate` when pricing is configured. `/context` stays the focused detailed context view.
-- **Sessions**: `/sessions` lists the 12 most recent sessions by default; `/sessions all` shows every session. Long lists show a `… showing N of M · /sessions all` hint.
-- **Cost estimate caveats**: when both `MODEL_INPUT_COST_PER_MTOKENS` and `MODEL_OUTPUT_COST_PER_MTOKENS` are set, `/status` shows an **estimate** based only on provider-reported tokens captured by the client. It does not model provider-specific cache discounts, promotions, taxes, or external usage, and it never writes pricing into the user config.
-- **Web search**: with `TAVILY_API_KEY` set, `web_search` becomes available and every call requires your approval because the query is sent to an external service. Results are returned as untrusted reference material inside `<untrusted_web_results>`; they cannot trigger commands or override permission rules. Queries must never contain credentials or private source code.
-- **Tool cards**: while a tool runs, nothing is printed; when it finishes the renderer emits **one compact card** with the tool name, outcome, duration, the input summary and up to three preview lines (stderr in error colour). Omitted output is summarized as `… N more lines hidden · /tool <T-reference>`. Each card hint is a stable `T-<10-hex>` reference derived from the full provider id (never its ambiguous first characters), and `/tool <T-reference>` (or a full/unique provider-id prefix) prints the retained full result, which also shows the `Reference` and full `Id`. Non-TTY output stays stable `[stdout]`/`[stderr]` records.
-- There is **no automatic Git rollback**: NJUAgent never resets, restores, stashes, or commits on its own.
-
-## Architecture
-
-```
-CLI (session / prompt / renderer)
-  └─ AgentRunner            model/tool loop, stop reasons, stats
-      ├─ ConversationHistory  append-only, invariant-checked messages
-      ├─ ContextPolicy        token estimate, deterministic compaction
-      ├─ ModelProvider        vendor-neutral contract
-      │    └─ AnthropicProvider  only place that knows the SDK types
-      └─ ToolExecutor         validation, permissions, execution
-          ├─ ToolRegistry     name → schema + implementation
-          ├─ PermissionPolicy allow / ask / deny
-          └─ Workspace        canonical-path boundary
-  Plan / Goal / Evidence      session-owned state, saved with the session
-      └─ GoalController       StopGate: verifies only when the worker stops
-          └─ GoalEvaluator    no-tools model check + host evidence policy
-```
-
-Design principles:
-
-1. The model decides *what* to do; the harness decides *what is allowed*.
-2. The runner only knows internal types — SDK types never cross the provider boundary.
-3. Tools describe themselves with JSON Schema; the executor handles validation, permission, timing and error conversion uniformly.
-4. Safety (workspace boundary, command timeout, output budget, dangerous-command denial) is enforced by the host, never delegated to the model.
-5. A run ending with no tool call is reported as `completed`, **not** as "task proven successful"; the terminal shows real command records and lets you judge.
-
-## Tools
-
-| Tool | Purpose |
-| --- | --- |
-| `read_file` | read UTF-8 text with one-based line pagination |
-| `write_file` | create or overwrite a file |
-| `edit_file` | exact literal replacement (fails on zero or ambiguous matches unless `replaceAll`) |
-| `list_files` | sorted listing with glob filtering, ignores `.git`/`node_modules`/build dirs |
-| `search_text` | literal text search with `path:line` matches and result limits |
-| `run_command` | shell command in the workspace, with timeout, cancellation and head/tail output capture |
-| `plan_write` | replace the model-maintained execution plan (session metadata, no permission prompt) |
-| `web_search` | optional Tavily-backed web search; requires approval, returns untrusted results |
-| `fetch_url` | fetch one known public HTTPS text URL (GitHub blob/tree compatible); approval in `balanced`/`cautious`, automatic in `trusted`, returns untrusted text |
-
-## Security model
-
-- File tools accept only workspace-relative paths; canonical paths are re-checked against the workspace root after `realpath` resolution, covering `..`, absolute paths and symlink escapes.
-- Commands run with the workspace as `cwd`, inside a **sanitized allowlisted environment**: model credentials and unrelated parent variables (such as `DATABASE_URL`) are never passed to child processes. Only documented runtime variables (`PATH`, `HOME`, locale, color and CI flags, and Windows system variables) are copied.
-- Commands have a timeout, support cancellation, and stream output through a per-call live display budget (`UI_OUTPUT_MAX_BYTES`) that is separate from the model-result budget (`TOOL_OUTPUT_MAX_BYTES`).
-- The balanced permission policy auto-allows reads, ordinary writes/edits, and a strict set of test/build/lint and read-only git commands; pipelines, redirection, home expansion, arbitrary runtimes, deletion, dependency install, network and destructive git operations require confirmation; privilege escalation, disk formatting and obvious outside-workspace targets are denied.
-- A conservative lexical command guard runs **before every permission mode**: home expansion (`~`, `$HOME`, `${HOME}`), absolute paths, `..` traversal, `cd`/`pushd`/`popd` escapes, `git -C`, command substitution/backticks, pipe-to-shell, `sudo`/`doas`, destructive system forms and remote Git pushes are hard-denied in `balanced`, `cautious`, and `trusted` alike — an approval prompt can never override them. This is defense in depth, not an OS-level isolation boundary.
-- **Network scope**: `fetch_url` uses the host machine's direct network reachability — it is not a VPN/proxy bypass, and proxy variables are never forwarded into `run_command` child shells. Ordinary GitHub file/blob and tree/directory links are served through public Contents API compatibility; fetched text is always untrusted, is bounded by `REMOTE_FETCH_MAX_BYTES`, and can only be persisted by an explicit workspace-relative `write_file`.
-- A denied or cancelled tool still produces a structured tool result so the message history stays valid.
-
-This is a trusted local developer tool, **not an operating-system sandbox**: commands run with the permissions of your user account, and a project script you approve can still access any file your account can access (see the design doc for TOCTOU limitations). The command guard blocks obvious escape attempts but makes no claim to be a kernel/container filesystem boundary.
-
-## Testing
+- 文件工具只能访问当前工作区（realpath 后再校验）；命令先经过工作区 guard 再进入权限模式判断，并具有超时、取消与输出上限；
+- 子进程运行在清理后的白名单环境里，**不**继承模型凭据或代理变量；`fetch_url` 只读拉取文本，保存仍需工作区相对路径的 `write_file`；
+- 联网内容（搜索与拉取）统一视为不可信数据，不授权任何操作；不存在 “unrestricted” 权限模式；
+- 修改代码后，Agent 会通过测试或构建验证结果；Goal 场景下编辑后必须有全新的成功验证命令才算满足。
 
 ```bash
-npm test              # the full offline unit and integration suite, no network
+npm test
 npm run typecheck
 npm run build
-npm run test:smoke    # opt-in real API smoke test; skips when env vars are absent
 ```
 
-Unit tests cover the runner loop, message invariants, workspace boundary, credential isolation, command permission classification, all tools, permission policy, retry, context compaction, provider translation, the live-output limiter and the CLI. The integration test drives a real fail → fix → pass coding loop (see `tests/fixtures/demo-project`) with only the model provider scripted. `npm run test:smoke` reports `PASS` only after an actual credentialed run against the real endpoint; without credentials it prints a skip message and exits 0.
-
-## Demo scenario
-
-`tests/fixtures/demo-project` contains a tiny module with a deliberately failing test. The planned demo scenario shows the agent listing files, reading the module and its test, editing to add input validation, running `npm test`, seeing the failure, fixing the range check, and reporting a green run. The Stage Four acceptance scenario adds a `/goal` with a two-command condition (`npm test` and `npm run typecheck` both exit 0 after the latest edit) so the agent must run the missing verification before the goal is marked verified.
-
-## Limitations
-
-- Single agent, single active workspace; no GUI, MCP, background tasks or multi-agent orchestration.
-- Context accounting uses a conservative estimate plus the latest Provider usage; it is not an exact tokenizer calculation.
-- `edit_file` requires exact literal matches; there is no fuzzy or patch-based editing.
-- The agent's claims are only as good as the commands it actually ran; the UI never fabricates a "verified" badge.
-- When a reply is cut off by the model output limit (e.g. a huge one-shot `write_file`), the runner retries automatically with a "write smaller pieces" note (up to twice per turn) instead of failing; raising `AGENT_MAX_TOKENS` (default 8192, up to ~12000) further reduces how often this happens. Model-side, prefer a file skeleton plus `edit_file` sections over one giant write.
-
-## Documentation
-
-- Requirements baseline: `docs/PROJECT_REQUIREMENTS.md`
-- Stage One design: `docs/superpowers/specs/2026-08-27-njuagent-design.md`
-- Stage Two design: `docs/superpowers/specs/2026-08-28-stage-two-productization-design.md`
-- Stage Two acceptance fixes: `docs/superpowers/plans/2026-08-28-stage-two-acceptance-fixes.md`
-- Stage Three CLI UI design: `docs/superpowers/specs/2026-08-29-stage-three-cli-ui-design.md`
-- Stage Four design: `docs/superpowers/specs/2026-08-29-stage-four-reliable-agent-design.md`
+当前版本为单 Agent、单工作区 CLI。
