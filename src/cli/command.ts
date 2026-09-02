@@ -52,6 +52,7 @@ export type CommandContext = {
   sessionManager: Pick<
     SessionManager,
     | "active"
+    | "messages"
     | "isDirty"
     | "flush"
     | "createNew"

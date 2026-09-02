@@ -353,6 +353,7 @@ describe("CliSession with command router", () => {
         signal: new AbortController().signal,
         sessionManager: {
           active: () => { throw new Error("unused"); },
+          messages: () => [],
           isDirty: () => false,
           flush: async () => undefined,
           createNew: async () => { throw new Error("unused"); },
@@ -407,6 +408,7 @@ describe("CliSession with command router", () => {
         signal: new AbortController().signal,
         sessionManager: {
           active: () => { throw new Error("unused"); },
+          messages: () => [],
           isDirty: () => false,
           flush: async () => undefined,
           createNew: async () => { throw new Error("unused"); },
@@ -462,6 +464,7 @@ describe("CliSession with command router", () => {
         signal: new AbortController().signal,
         sessionManager: {
           active: () => { throw new Error("unused"); },
+          messages: () => [],
           isDirty: () => false,
           flush: async () => undefined,
           createNew: async () => { throw new Error("unused"); },

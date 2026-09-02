@@ -29,6 +29,7 @@ Interactive commands:
   /resume <id>                 Resume a saved session
   /new                         Start a new session
   /history [1-100]             Show recent messages
+  /tool <id>                   Show retained output for a tool call
   /plan [clear]                Show or clear the model-maintained plan
   /goal [clear|<condition>]    Set, show, or clear the explicit completion goal
   /exit                        Save the current session and exit

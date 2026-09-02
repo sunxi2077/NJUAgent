@@ -85,6 +85,7 @@ Input starting with `/` is handled locally and never reaches the model; use `//`
 /resume <id>                 Resume a saved session (full UUID or unique prefix)
 /new                         Start a new session
 /history [1-100]             Show recent messages
+/tool <id>                   Show retained output for a tool call (full id or unique prefix)
 /context                     Show context budget and checkpoint status
 /compact [focus]             Summarize the covered conversation
 /plan [clear]                Show or clear the model-maintained execution plan

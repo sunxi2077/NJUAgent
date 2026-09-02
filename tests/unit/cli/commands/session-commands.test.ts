@@ -90,6 +90,7 @@ function makeContext(overrides: Partial<FakeServices> = {}) {
 
     sessionManager: {
       active: () => structuredClone(activeSession),
+      messages: () => structuredClone(activeSession.messages),
       isDirty: () => services.dirty,
       flush: async () => {
         services.flushCalls += 1;

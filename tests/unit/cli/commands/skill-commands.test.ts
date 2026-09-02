@@ -61,6 +61,7 @@ function makeContext(overrides: {
       active: () => {
         throw new Error("unused");
       },
+      messages: () => [],
       isDirty: () => false,
       flush: async () => undefined,
       createNew: async () => {

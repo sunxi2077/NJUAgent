@@ -13,6 +13,7 @@ import { createSkillsCommand } from "./skills-command.js";
 import { createSessionsCommand } from "./sessions-command.js";
 import { createStatusCommand } from "./status-command.js";
 import { createSetupCommand } from "./setup-command.js";
+import { createToolCommand } from "./tool-command.js";
 
 /** Registers the complete local command surface. */
 export function registerCoreCommands(router: SlashCommandRouter): void {
@@ -22,6 +23,7 @@ export function registerCoreCommands(router: SlashCommandRouter): void {
   router.register(createResumeCommand());
   router.register(createNewCommand());
   router.register(createHistoryCommand());
+  router.register(createToolCommand());
   router.register(createContextCommand());
   router.register(createCompactCommand());
   router.register(createPlanCommand());

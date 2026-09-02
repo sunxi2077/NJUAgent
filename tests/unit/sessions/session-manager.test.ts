@@ -183,6 +183,21 @@ describe("SessionManager", () => {
     expect(store.saveCalls).toBe(1);
   });
 
+  test("messages() returns a defensive clone that cannot leak mutations", async () => {
+    const { manager } = setup();
+    await manager.runTurn("task", new AbortController().signal);
+
+    const snapshot = manager.messages();
+    expect(snapshot).toHaveLength(1);
+    const first = snapshot[0]!;
+    first.content.push({ type: "text", text: "injected" });
+    expect(snapshot[0]!.content).toHaveLength(2);
+
+    // The live transcript is untouched by edits to the returned snapshot.
+    expect(manager.messages()).toHaveLength(1);
+    expect(manager.messages()[0]!.content).toHaveLength(1);
+  });
+
   test("first user text changes New session to a deterministic title", async () => {
     const { manager, store } = setup();
     await manager.runTurn("fix   the   parser", new AbortController().signal);

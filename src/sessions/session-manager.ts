@@ -1,6 +1,7 @@
 import type { RunResult } from "../agent/result.js";
 import type { ContextState, ContextStatus, PreparedContext } from "../agent/context-types.js";
 import { ConversationHistory } from "../agent/history.js";
+import type { Message } from "../agent/messages.js";
 import type { Skill } from "../skills/skill.js";
 import type { SkillRegistry } from "../skills/skill-registry.js";
 import { AppError } from "../errors/app-error.js";
@@ -69,6 +70,14 @@ export class SessionManager {
 
   active(): PersistedSessionV1 {
     return structuredClone(this.#activeRuntime.session);
+  }
+
+  /**
+   * Read-only snapshot of the active session transcript for local commands.
+   * Returns a defensive clone so callers can never mutate session internals.
+   */
+  messages(): readonly Message[] {
+    return structuredClone(this.#activeRuntime.session.messages);
   }
 
   isDirty(): boolean {
