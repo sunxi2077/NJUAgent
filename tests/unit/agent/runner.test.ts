@@ -639,3 +639,73 @@ describe("AgentRunner", () => {
     });
   });
 });
+
+class OutputLimitProvider implements ModelProvider {
+  readonly requests: ModelRequest[] = [];
+
+  constructor(
+    private readonly failureCount: number,
+    private readonly okScript: readonly ProviderEvent[],
+  ) {}
+
+  async *stream(request: ModelRequest): AsyncIterable<ProviderEvent> {
+    this.requests.push(structuredClone(request));
+    if (this.requests.length <= this.failureCount) {
+      throw new ProviderError(
+        "Model hit the output token limit while composing a tool call",
+        { kind: "output_limit", retryable: false },
+      );
+    }
+    for (const event of this.okScript) {
+      yield event;
+    }
+  }
+}
+
+describe("AgentRunner output-limit recovery", () => {
+  test("recovers once with a smaller-step note and completes", async () => {
+    const provider = new OutputLimitProvider(1, [
+      complete(textAssistant("wrote it in smaller pieces")),
+    ]);
+    const history = new ConversationHistory();
+    const events: AgentEvent[] = [];
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools: emptyTools,
+      maxSteps: 5,
+      systemPrompt: "Be precise.",
+      onEvent: (event) => events.push(event),
+    });
+
+    const result = await runner.run("task", new AbortController().signal);
+
+    expect(result).toMatchObject({ status: "completed", steps: 2, toolCalls: 0 });
+    expect(history.snapshot()).toContainEqual(textAssistant("wrote it in smaller pieces"));
+    expect(events.map((event) => event.type)).toContain("retrying");
+    // The first request has the plain prompt; the retry carries the note.
+    expect(provider.requests[0]!.system).toBe("Be precise.");
+    expect(provider.requests[1]!.system).toContain("output token limit");
+    expect(provider.requests[1]!.system).toContain("skeleton");
+  });
+
+  test("gives up after the recovery budget and rolls the history back", async () => {
+    const provider = new OutputLimitProvider(99, [
+      complete(textAssistant("never used")),
+    ]);
+    const history = new ConversationHistory();
+    const runner = new AgentRunner({
+      provider,
+      history,
+      tools: emptyTools,
+      maxSteps: 10,
+      systemPrompt: "Be precise.",
+    });
+
+    const result = await runner.run("task", new AbortController().signal);
+
+    expect(result.status).toBe("model_failed");
+    expect(provider.requests).toHaveLength(3); // 1 attempt + 2 recoveries
+    expect(history.snapshot()).toEqual([]);
+  });
+});

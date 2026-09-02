@@ -9,7 +9,21 @@ import type {
   ModelToolDefinition,
   ProviderEvent,
 } from "../providers/provider.js";
+import { ProviderError } from "../providers/provider.js";
 import { withModelRetry, type RetryPolicy } from "../providers/retry.js";
+
+/** Extra retries granted for output-limit truncation before giving up. */
+const MAX_OUTPUT_RECOVERIES = 2;
+const OUTPUT_RECOVERY_NOTE =
+  "Your previous reply ended before producing a usable result (the model hit " +
+  "its output token limit or returned nothing). Continue the task now. If you " +
+  "were writing a file, keep every single write small enough to finish in one " +
+  "reply: write a skeleton first, then fill it in with separate edit_file " +
+  "calls. Do not repeat work that already completed.";
+
+function isOutputLimitError(error: unknown): error is ProviderError {
+  return error instanceof ProviderError && error.kind === "output_limit";
+}
 
 export type ToolPortResult = ToolResultBlock & { durationMs?: number };
 
@@ -48,6 +62,10 @@ export class AgentRunner {
     let steps = 0;
     let toolCalls = 0;
     let lastInputTokens: number | undefined;
+    // Output-limit truncation (max_tokens mid-tool-call or an empty reply) is
+    // recovered in place: retry with a smaller-step note instead of failing.
+    let outputRecoveries = 0;
+    let recoveryNote: string | undefined;
     const historyBeforeRun = this.options.history.snapshot();
     this.options.stopGate?.beginRun?.();
     this.options.history.appendUserText(userText);
@@ -117,8 +135,13 @@ export class AgentRunner {
 
       let completed: Extract<ProviderEvent, { type: "message_completed" }> | undefined;
       try {
+        const system = recoveryNote === undefined
+          ? context.systemPrompt
+          : `${context.systemPrompt}\n\n${recoveryNote}`;
+        // The recovery note applies only to the retried request.
+        recoveryNote = undefined;
         const request = {
-          system: context.systemPrompt,
+          system,
           messages: context.messages,
           tools: this.options.tools.definitions(),
         };
@@ -159,6 +182,17 @@ export class AgentRunner {
             toolCalls,
             durationMs: performance.now() - startedAt,
           });
+        }
+        if (isOutputLimitError(error) && outputRecoveries < MAX_OUTPUT_RECOVERIES) {
+          outputRecoveries += 1;
+          recoveryNote = OUTPUT_RECOVERY_NOTE;
+          this.emit({
+            type: "retrying",
+            attempt: outputRecoveries,
+            delayMs: 0,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+          continue;
         }
         this.options.history.replace(historyBeforeRun);
         return this.finish({

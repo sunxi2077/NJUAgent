@@ -33,7 +33,8 @@ export type ProviderErrorKind =
   | "rate_limit"
   | "unavailable"
   | "protocol"
-  | "invalid_request";
+  | "invalid_request"
+  | "output_limit";
 
 export type ProviderErrorOptions = {
   kind: ProviderErrorKind;
@@ -68,5 +69,7 @@ export function providerKindToAppCode(kind: ProviderErrorKind): string {
     case "protocol":
     case "invalid_request":
       return "PROVIDER_PROTOCOL";
+    case "output_limit":
+      return "MODEL_OUTPUT_LIMIT";
   }
 }

@@ -28,7 +28,10 @@ function messageStart(inputTokens = 12) {
   };
 }
 
-function messageDelta(stopReason: "end_turn" | "tool_use", outputTokens = 4) {
+function messageDelta(
+  stopReason: "end_turn" | "tool_use" | "max_tokens",
+  outputTokens = 4,
+) {
   return {
     type: "message_delta",
     delta: { stop_reason: stopReason, stop_sequence: null },
@@ -317,5 +320,74 @@ describe("AnthropicProvider", () => {
     await expect(
       collect(provider, request(), controller.signal),
     ).rejects.toBeInstanceOf(DOMException);
+  });
+});
+
+describe("AnthropicProvider output-limit classification", () => {
+  test("malformed tool JSON with stop_reason max_tokens is an output_limit error", async () => {
+    const client = new FixtureClient([
+      messageStart(),
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "call-1", name: "write_file", input: {} },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: '{"path":"' },
+      },
+      messageDelta("max_tokens"),
+      { type: "message_stop" },
+    ]);
+    const provider = new AnthropicProvider({
+      model: "deepseek-test",
+      maxTokens: 2048,
+      client,
+    });
+
+    await expect(collect(provider, request())).rejects.toMatchObject({
+      name: "ProviderError",
+      kind: "output_limit",
+      retryable: false,
+    });
+  });
+
+  test("an empty completion with stop_reason max_tokens is an output_limit error", async () => {
+    const client = new FixtureClient([
+      messageStart(),
+      messageDelta("max_tokens"),
+      { type: "message_stop" },
+    ]);
+    const provider = new AnthropicProvider({
+      model: "deepseek-test",
+      maxTokens: 2048,
+      client,
+    });
+
+    await expect(collect(provider, request())).rejects.toMatchObject({
+      name: "ProviderError",
+      kind: "output_limit",
+      retryable: false,
+    });
+  });
+
+  test("an empty completion with end_turn stays a protocol error", async () => {
+    const client = new FixtureClient([
+      messageStart(),
+      messageDelta("end_turn"),
+      { type: "message_stop" },
+    ]);
+    const provider = new AnthropicProvider({
+      model: "deepseek-test",
+      maxTokens: 2048,
+      client,
+    });
+
+    await expect(collect(provider, request())).rejects.toMatchObject({
+      name: "ProviderError",
+      kind: "protocol",
+      retryable: false,
+    });
   });
 });

@@ -162,7 +162,23 @@ function mapError(error: unknown, signal: AbortSignal): Error {
   );
 }
 
-function assembleMessage(blocks: ReadonlyMap<number, PendingBlock>): AssistantMessage {
+/**
+ * A completion that ended at the model's output limit (stop_reason
+ * `max_tokens`) with an unusable result is truncation, not a protocol bug:
+ * report it as `output_limit` so the runner can recover with a smaller-step
+ * continuation instead of failing the whole run.
+ */
+function outputLimitError(message: string): ProviderError {
+  return new ProviderError(message, {
+    kind: "output_limit",
+    retryable: false,
+  });
+}
+
+function assembleMessage(
+  blocks: ReadonlyMap<number, PendingBlock>,
+  stopReason: string | undefined,
+): AssistantMessage {
   const content: AssistantBlock[] = [];
   const ordered = [...blocks.entries()].sort(([left], [right]) => left - right);
   for (const [, block] of ordered) {
@@ -175,6 +191,11 @@ function assembleMessage(blocks: ReadonlyMap<number, PendingBlock>): AssistantMe
       try {
         input = JSON.parse(block.partialJson) as unknown;
       } catch (error) {
+        if (stopReason === "max_tokens") {
+          throw outputLimitError(
+            "Model hit the output token limit while composing a tool call",
+          );
+        }
         throw new ProviderError(`Malformed tool input JSON for ${block.name}`, {
           kind: "protocol",
           retryable: false,
@@ -190,6 +211,11 @@ function assembleMessage(blocks: ReadonlyMap<number, PendingBlock>): AssistantMe
     });
   }
   if (content.length === 0) {
+    if (stopReason === "max_tokens") {
+      throw outputLimitError(
+        "Model hit the output token limit before producing content",
+      );
+    }
     throw new ProviderError("Model completed without assistant content", {
       kind: "protocol",
       retryable: false,
@@ -290,7 +316,7 @@ export class AnthropicProvider implements ModelProvider {
             }
             yield {
               type: "message_completed",
-              message: assembleMessage(blocks),
+              message: assembleMessage(blocks, stopReason),
               stopReason,
             };
             completed = true;
