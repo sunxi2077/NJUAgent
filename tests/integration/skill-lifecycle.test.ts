@@ -5,8 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { AppConfig } from "../../src/config.js";
+import type { CommandContext } from "../../src/cli/command.js";
 import type { Prompt } from "../../src/cli/prompt.js";
 import type { Renderer } from "../../src/cli/renderer.js";
+import { createTheme } from "../../src/cli/theme.js";
+import { createSkillCommand } from "../../src/cli/commands/skill-command.js";
+import { createSkillsCommand } from "../../src/cli/commands/skills-command.js";
 import type { ModelProvider, ModelRequest, ProviderEvent } from "../../src/providers/provider.js";
 import { createRuntime } from "../../src/runtime/create-runtime.js";
 import { SkillRegistry } from "../../src/skills/skill-registry.js";
@@ -67,6 +71,21 @@ class MemoryRenderer implements Renderer {
   error(): void {}
 }
 
+class PrintRenderer implements Renderer {
+  readonly printed: string[] = [];
+  readonly errors: string[] = [];
+  permissionRequest(): void {}
+  permissionDecision(): void {}
+  handle(): void {}
+  toolOutput(): void {}
+  print(text: string): void {
+    this.printed.push(text);
+  }
+  error(message: string): void {
+    this.errors.push(message);
+  }
+}
+
 function makeConfig(workspaceRoot: string): AppConfig {
   return {
     apiKey: "test-key",
@@ -89,12 +108,19 @@ function makeConfig(workspaceRoot: string): AppConfig {
   };
 }
 
-async function writeSkill(root: string, name: string, description: string, body: string): Promise<void> {
+async function writeSkill(
+  root: string,
+  name: string,
+  description: string,
+  body: string,
+  license?: string,
+): Promise<void> {
   const dir = path.join(root, name);
   await mkdir(dir, { recursive: true });
+  const licenseLine = license === undefined ? "" : `license: ${license}\n`;
   await writeFile(
     path.join(dir, "SKILL.md"),
-    `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`,
+    `---\nname: ${name}\ndescription: ${description}\n${licenseLine}---\n\n${body}\n`,
     "utf8",
   );
 }
@@ -267,5 +293,52 @@ describe("skill lifecycle", () => {
     };
     await walk(fixtureRoot);
     expect(offenders).toEqual([]);
+  });
+
+  test("an official license-bearing project Skill lists in /skills and activates via /skill", async () => {
+    const home = await tempDirectory("nju-skill-");
+    const workspace = await tempDirectory("nju-skill-work-");
+    const userRoot = await tempDirectory("nju-skill-user-");
+    const projectRoot = path.join(workspace, ".nju-agent", "skills");
+    await writeSkill(
+      projectRoot,
+      "frontend-design",
+      "Guidance for distinctive, intentional visual design.",
+      "Follow the design system.",
+      "Complete terms in LICENSE.txt",
+    );
+    const provider = new RecordingProvider();
+    const { manager, store, registry } = await makeManager({
+      home,
+      workspace,
+      provider,
+      userSkillsRoot: userRoot,
+      projectSkillsRoot: projectRoot,
+    });
+    const renderer = new PrintRenderer();
+    const context: CommandContext = {
+      renderer,
+      theme: createTheme({ enabled: false }),
+      signal: new AbortController().signal,
+      webSearchAvailable: false,
+      display: { enhanced: false, columns: () => 80 },
+      skillRegistry: registry,
+      sessionManager: manager,
+      store,
+    };
+
+    await createSkillsCommand().execute("", context);
+    expect(renderer.printed.join("\n")).toContain("frontend-design");
+
+    const skillResult = await createSkillCommand().execute("frontend-design", context);
+    expect(skillResult).toEqual({ kind: "continue", stateChanged: true });
+    expect(renderer.errors).toEqual([]);
+    expect(renderer.printed.join("\n")).toContain(
+      'Skill "frontend-design" activated (source: project).',
+    );
+    expect(manager.activeSkill()?.name).toBe("frontend-design");
+
+    await manager.runTurn("redesign the header", new AbortController().signal);
+    expect(provider.requests.at(-1)!.system).toContain("Follow the design system.");
   });
 });

@@ -461,4 +461,83 @@ describe("tool card and /tool inspector end-to-end", () => {
     },
     20_000,
   );
+
+  test(
+    "approval shows a running status immediately until the result card",
+    async () => {
+      const tempDir = await makeTempWorkspace();
+      const provider = new ScriptedProvider([
+        [
+          complete(toolAssistant([
+            {
+              id: "c-run12345678",
+              name: "run_command",
+              input: { command: "printf '1\\n2\\n3\\n4\\n5\\n'" },
+            },
+          ])),
+        ],
+        [
+          { type: "text_delta", text: "Done." },
+          complete(textAssistant("Done.")),
+        ],
+      ]);
+      const workspace = await Workspace.open(tempDir);
+      const registry = new ToolRegistry();
+      registry.register(
+        createRunCommandTool({
+          workspace,
+          defaultTimeoutMs: 15_000,
+          maxOutputBytes: 8192,
+        }),
+      );
+      const chunks: string[] = [];
+      const stdout = {
+        write(chunk: string): boolean {
+          chunks.push(chunk);
+          return true;
+        },
+      };
+      const renderer = new TerminalRenderer({ stdout, isTTY: true, noColor: false });
+      const executor = new ToolExecutor({
+        registry,
+        permissionPolicy: new BalancedPermissionPolicy(),
+        // Mirror create-runtime: the ask surfaces a permission card, then the
+        // approval record, then the running status.
+        confirm: async (call, reason) => {
+          renderer.permissionRequest(call, reason);
+          renderer.permissionDecision(call, true);
+          return true;
+        },
+        onOutput: (call, stream, text) => renderer.toolOutput(call, stream, text),
+      });
+      const history = new ConversationHistory();
+      const runner = new AgentRunner({
+        provider,
+        history,
+        tools: executor,
+        maxSteps: 5,
+        systemPrompt: "Be precise.",
+        onEvent: (event) => renderer.handle(event),
+      });
+
+      const result = await runner.run("print lines", new AbortController().signal);
+
+      expect(result.status).toBe("completed");
+      assertValidHistory(history.snapshot());
+      const visible = stripVTControlCharacters(chunks.join(""));
+      const required = visible.indexOf("⚠ Permission required");
+      const allowed = visible.indexOf("✓ Allowed run_command once");
+      const running = visible.indexOf("run_command running… Ctrl-C cancels");
+      const card = visible.indexOf("╭─ ⚙ run_command · succeeded");
+      expect(required).toBeGreaterThanOrEqual(0);
+      expect(allowed).toBeGreaterThan(required);
+      expect(running).toBeGreaterThan(allowed);
+      expect(card).toBeGreaterThan(running);
+      // One compact result card; no live stdout lines streamed before it.
+      expect(visible.match(/╭─ ⚙ run_command/gu)).toHaveLength(1);
+      const beforeCard = visible.slice(0, card);
+      expect(beforeCard).not.toContain("│ stdout");
+    },
+    20_000,
+  );
 });
