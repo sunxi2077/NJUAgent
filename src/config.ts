@@ -23,6 +23,8 @@ export type AppConfig = {
   tavilyApiKey?: string;
   webSearchTimeoutMs: number;
   webSearchMaxContentChars: number;
+  /** Optional token pricing (USD per million tokens); environment-only. */
+  pricing?: { inputPerMillion: number; outputPerMillion: number };
 };
 
 export class ConfigError extends AppError {
@@ -83,6 +85,39 @@ function readNonNegativeInt(
     );
   }
   return value;
+}
+
+/**
+ * Reads an optional paired decimal pricing configuration. Both values must be
+ * present and be finite, non-negative decimals, or neither is configured.
+ * Values are never persisted and never echo secrets.
+ */
+function readPricing(
+  env: NodeJS.ProcessEnv,
+): { inputPerMillion: number; outputPerMillion: number } | undefined {
+  const inputRaw = env.MODEL_INPUT_COST_PER_MTOKENS?.trim() ?? "";
+  const outputRaw = env.MODEL_OUTPUT_COST_PER_MTOKENS?.trim() ?? "";
+  if (inputRaw === "" && outputRaw === "") {
+    return undefined;
+  }
+  if (inputRaw === "" || outputRaw === "") {
+    throw new ConfigError(
+      "MODEL_INPUT_COST_PER_MTOKENS and MODEL_OUTPUT_COST_PER_MTOKENS must be set together",
+    );
+  }
+  const parse = (raw: string, name: string): number => {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) {
+      throw new ConfigError(
+        `Environment variable ${name} must be a non-negative decimal; got "${raw}"`,
+      );
+    }
+    return value;
+  };
+  return {
+    inputPerMillion: parse(inputRaw, "MODEL_INPUT_COST_PER_MTOKENS"),
+    outputPerMillion: parse(outputRaw, "MODEL_OUTPUT_COST_PER_MTOKENS"),
+  };
 }
 
 function readRatio(
@@ -268,6 +303,9 @@ export function resolveConfig(input: ResolveConfigInput): AppConfig {
       "WEB_SEARCH_MAX_CONTENT_CHARS",
       NUMERIC_DEFAULTS.WEB_SEARCH_MAX_CONTENT_CHARS,
     ),
+    ...(readPricing(input.env) === undefined
+      ? {}
+      : { pricing: readPricing(input.env)! }),
   };
 }
 

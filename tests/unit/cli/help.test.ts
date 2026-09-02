@@ -23,6 +23,8 @@ describe("CLI help", () => {
     expect(HELP_TEXT).toContain("ANTHROPIC_API_KEY");
     expect(HELP_TEXT).toContain("NJU_AGENT_HOME");
     expect(HELP_TEXT).toContain("NO_COLOR");
+    expect(HELP_TEXT).toContain("MODEL_INPUT_COST_PER_MTOKENS");
+    expect(HELP_TEXT).toContain("MODEL_OUTPUT_COST_PER_MTOKENS");
     expect(HELP_TEXT).toContain("/exit");
   });
 });

@@ -284,3 +284,42 @@ describe("context budgets", () => {
     ).toThrow(/hard input budget/iu);
   });
 });
+
+describe("pricing configuration", () => {
+  test("pricing is absent when both variables are absent", () => {
+    const config = loadConfig(validEnv, []);
+    expect(config.pricing).toBeUndefined();
+  });
+
+  test("a valid decimal pair reaches AppConfig.pricing", () => {
+    const config = loadConfig(
+      {
+        ...validEnv,
+        MODEL_INPUT_COST_PER_MTOKENS: "0.28",
+        MODEL_OUTPUT_COST_PER_MTOKENS: "1.10",
+      },
+      [],
+    );
+    expect(config.pricing).toEqual({ inputPerMillion: 0.28, outputPerMillion: 1.1 });
+  });
+
+  test.each([
+    ["one-sided input", { MODEL_INPUT_COST_PER_MTOKENS: "0.28" }],
+    ["one-sided output", { MODEL_OUTPUT_COST_PER_MTOKENS: "1.10" }],
+    ["blank input", { MODEL_INPUT_COST_PER_MTOKENS: "  ", MODEL_OUTPUT_COST_PER_MTOKENS: "1.10" }],
+    ["blank output", { MODEL_INPUT_COST_PER_MTOKENS: "0.28", MODEL_OUTPUT_COST_PER_MTOKENS: "" }],
+    ["negative", { MODEL_INPUT_COST_PER_MTOKENS: "-0.28", MODEL_OUTPUT_COST_PER_MTOKENS: "1.10" }],
+    ["NaN", { MODEL_INPUT_COST_PER_MTOKENS: "NaN", MODEL_OUTPUT_COST_PER_MTOKENS: "1.10" }],
+    ["Infinity", { MODEL_INPUT_COST_PER_MTOKENS: "Infinity", MODEL_OUTPUT_COST_PER_MTOKENS: "1.10" }],
+    ["not a number", { MODEL_INPUT_COST_PER_MTOKENS: "abc", MODEL_OUTPUT_COST_PER_MTOKENS: "1.10" }],
+  ])("rejects %s configuration without echoing secrets", (_name, extra) => {
+    let error: unknown;
+    try {
+      loadConfig({ ...validEnv, ...extra }, []);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ConfigError);
+    expect(String(error)).not.toContain("sk-test");
+  });
+});

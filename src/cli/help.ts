@@ -19,6 +19,8 @@ Environment:
   TAVILY_API_KEY               optional; enables the permission-gated web_search tool
   WEB_SEARCH_TIMEOUT_MS        web search timeout in ms (default 15000)
   WEB_SEARCH_MAX_CONTENT_CHARS per-result content cap (default 6000)
+  MODEL_INPUT_COST_PER_MTOKENS optional USD price per million input tokens
+  MODEL_OUTPUT_COST_PER_MTOKENS optional USD price per million output tokens
 
 Interactive commands:
   /help                        Show available commands
