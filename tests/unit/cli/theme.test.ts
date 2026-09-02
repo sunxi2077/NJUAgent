@@ -65,3 +65,28 @@ describe("shouldEnableTerminalTheme", () => {
     expect(shouldEnableTerminalTheme({ isTTY: true, env: { TERM: "dumb" } })).toBe(false);
   });
 });
+
+describe("createTheme hyperlinks", () => {
+  test("disabled theme returns the label unchanged without OSC 8", () => {
+    const theme = createTheme({ enabled: false });
+    expect(theme.hyperlink("docs", "https://example.com")).toBe("docs");
+  });
+
+  test("enabled theme wraps the label in an OSC 8 hyperlink", () => {
+    const theme = createTheme({ enabled: true });
+    const link = theme.hyperlink("docs", "https://example.com/path?a=1");
+    expect(link).toContain("\x1b]8;;https://example.com/path?a=1\x1b\\");
+    expect(link).toContain("docs");
+    expect(link).toContain("\x1b]8;;\x1b\\");
+    expect(link.startsWith("\x1b]8;;")).toBe(true);
+    expect(link.endsWith("\x1b]8;;\x1b\\")).toBe(true);
+  });
+
+  test("url control characters cannot inject a second OSC 8 payload", () => {
+    const theme = createTheme({ enabled: true });
+    const link = theme.hyperlink("x", "https://example.com/a\x1b]8;;evil");
+    // Exactly one opener and one closer; the injected ESC is stripped.
+    expect(link.split("\x1b]8;;")).toHaveLength(3);
+    expect(link).not.toContain("\x1b]8;;evil");
+  });
+});

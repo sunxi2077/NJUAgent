@@ -127,4 +127,22 @@ describe("StreamingMarkdownRenderer", () => {
   ])("recognizes $chunks across block-prefix chunk boundaries", ({ chunks, expected }) => {
     expect(render(chunks).visible).toBe(expected);
   });
+
+  test("markdown links become OSC 8 hyperlinks when the theme is enabled", () => {
+    const result = render(["Read [the docs](https://nodejs.org/api/abort.html) now."]);
+    expect(result.visible).toBe("Read the docs (https://nodejs.org/api/abort.html) now.");
+    expect(result.raw).toContain("\x1b]8;;https://nodejs.org/api/abort.html\x1b\\");
+    expect(result.raw).toContain("\x1b]8;;\x1b\\");
+    // Exactly one opener and one closer beyond the plain suffix URL.
+    expect(result.raw.split("\x1b]8;;")).toHaveLength(3);
+  });
+
+  test("a disabled theme renders links as plain text without OSC 8", () => {
+    const renderer = new StreamingMarkdownRenderer(createTheme({ enabled: false }));
+    const raw =
+      renderer.push("Read [the docs](https://nodejs.org/api/abort.html) now.").text +
+      renderer.flush().text;
+    expect(raw).toBe("Read the docs (https://nodejs.org/api/abort.html) now.");
+    expect(raw).not.toContain("\x1b]8;;");
+  });
 });

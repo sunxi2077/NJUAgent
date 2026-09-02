@@ -58,6 +58,7 @@ function markerTheme() {
     bold: (text: string): string => `«${text}»`,
     italic: identity,
     underline: identity,
+    hyperlink: (text: string) => text,
   } as const;
 }
 

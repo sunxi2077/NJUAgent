@@ -301,7 +301,14 @@ export class StreamingMarkdownRenderer {
 
       const link = /^\[([^\]\n]{1,1024})\]\(([^)\n]{1,1024})\)/u.exec(this.#pending);
       if (link !== null) {
-        output += this.#theme.underline(link[1]!) + this.#theme.muted(` (${link[2]})`);
+        // The label becomes a clickable OSC 8 hyperlink when the theme is
+        // enabled; the plain "(url)" suffix stays for terminals without link
+        // support and for plain output.
+        const label = this.#theme.hyperlink(
+          this.#theme.underline(link[1]!),
+          link[2]!,
+        );
+        output += label + this.#theme.muted(` (${link[2]})`);
         this.#lineOpen = true;
         this.#pending = this.#pending.slice(link[0].length);
         continue;

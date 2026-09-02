@@ -16,6 +16,8 @@ export type TerminalTheme = {
   bold(text: string): string;
   italic(text: string): string;
   underline(text: string): string;
+  /** Wraps `text` as a clickable OSC 8 terminal hyperlink when enabled. */
+  hyperlink(text: string, url: string): string;
 };
 
 const identity = (text: string): string => text;
@@ -23,6 +25,25 @@ const identity = (text: string): string => text;
 /** Builds a foreground ANSI 256-color formatter that closes its own sequence. */
 function ansi256(code: number): (text: string) => string {
   return (text) => `\x1b[38;5;${code}m${text}\x1b[0m`;
+}
+
+const OSC8_OSC = "\x1b]8;;";
+const OSC8_ST = "\x1b\\";
+const OSC8_CLOSE = `${OSC8_OSC}${OSC8_ST}`;
+
+/** Removes control characters and backslashes that could break an OSC 8 payload. */
+function sanitizeUrl(url: string): string {
+  // eslint-disable-next-line no-control-regex
+  return url.replace(/[\u0000-\u001f\u007f\\]/gu, "");
+}
+
+/** OSC 8 terminal hyperlink; a sanitized-empty URL degrades to plain text. */
+function hyperlink(text: string, url: string): string {
+  const safe = sanitizeUrl(url);
+  if (safe === "") {
+    return text;
+  }
+  return `${OSC8_OSC}${safe}${OSC8_ST}${text}${OSC8_CLOSE}`;
 }
 
 /**
@@ -66,6 +87,7 @@ export function createTheme(options: { enabled: boolean }): TerminalTheme {
       bold: identity,
       italic: identity,
       underline: identity,
+      hyperlink: (text: string) => text,
     };
   }
   const brandStrong = ansi256(141);
@@ -86,5 +108,6 @@ export function createTheme(options: { enabled: boolean }): TerminalTheme {
     bold: semantic.bold,
     italic: semantic.italic,
     underline: semantic.underline,
+    hyperlink,
   };
 }
