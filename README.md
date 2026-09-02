@@ -39,6 +39,8 @@ Permission modes (`--permission-mode` or `/setup`): `cautious` asks before write
 | `TAVILY_API_KEY` | no | — | enables the permission-gated `web_search` tool |
 | `WEB_SEARCH_TIMEOUT_MS` | no | `15000` | web search request timeout |
 | `WEB_SEARCH_MAX_CONTENT_CHARS` | no | `6000` | per-result content cap for `web_search` |
+| `REMOTE_FETCH_TIMEOUT_MS` | no | `15000` | `fetch_url` request timeout |
+| `REMOTE_FETCH_MAX_BYTES` | no | `32768` | `fetch_url` byte cap per resource (1024–65536) |
 | `MODEL_INPUT_COST_PER_MTOKENS` | no | — | optional USD price per million input tokens (set with the output price) |
 | `MODEL_OUTPUT_COST_PER_MTOKENS` | no | — | optional USD price per million output tokens (set with the input price) |
 
@@ -188,6 +190,7 @@ Design principles:
 | `run_command` | shell command in the workspace, with timeout, cancellation and head/tail output capture |
 | `plan_write` | replace the model-maintained execution plan (session metadata, no permission prompt) |
 | `web_search` | optional Tavily-backed web search; requires approval, returns untrusted results |
+| `fetch_url` | fetch one known public HTTPS text URL (GitHub blob/tree compatible); approval in `balanced`/`cautious`, automatic in `trusted`, returns untrusted text |
 
 ## Security model
 
@@ -196,6 +199,7 @@ Design principles:
 - Commands have a timeout, support cancellation, and stream output through a per-call live display budget (`UI_OUTPUT_MAX_BYTES`) that is separate from the model-result budget (`TOOL_OUTPUT_MAX_BYTES`).
 - The balanced permission policy auto-allows reads, ordinary writes/edits, and a strict set of test/build/lint and read-only git commands; pipelines, redirection, home expansion, arbitrary runtimes, deletion, dependency install, network and destructive git operations require confirmation; privilege escalation, disk formatting and obvious outside-workspace targets are denied.
 - A conservative lexical command guard runs **before every permission mode**: home expansion (`~`, `$HOME`, `${HOME}`), absolute paths, `..` traversal, `cd`/`pushd`/`popd` escapes, `git -C`, command substitution/backticks, pipe-to-shell, `sudo`/`doas`, destructive system forms and remote Git pushes are hard-denied in `balanced`, `cautious`, and `trusted` alike — an approval prompt can never override them. This is defense in depth, not an OS-level isolation boundary.
+- **Network scope**: `fetch_url` uses the host machine's direct network reachability — it is not a VPN/proxy bypass, and proxy variables are never forwarded into `run_command` child shells. Ordinary GitHub file/blob and tree/directory links are served through public Contents API compatibility; fetched text is always untrusted, is bounded by `REMOTE_FETCH_MAX_BYTES`, and can only be persisted by an explicit workspace-relative `write_file`.
 - A denied or cancelled tool still produces a structured tool result so the message history stays valid.
 
 This is a trusted local developer tool, **not an operating-system sandbox**: commands run with the permissions of your user account, and a project script you approve can still access any file your account can access (see the design doc for TOCTOU limitations). The command guard blocks obvious escape attempts but makes no claim to be a kernel/container filesystem boundary.

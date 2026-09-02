@@ -23,6 +23,9 @@ export type AppConfig = {
   tavilyApiKey?: string;
   webSearchTimeoutMs: number;
   webSearchMaxContentChars: number;
+  /** fetch_url network timeout and per-fetch byte cap (environment-only). */
+  remoteFetchTimeoutMs: number;
+  remoteFetchMaxBytes: number;
   /** Optional token pricing (USD per million tokens); environment-only. */
   pricing?: { inputPerMillion: number; outputPerMillion: number };
 };
@@ -49,7 +52,32 @@ const NUMERIC_DEFAULTS = {
   CONTEXT_SAFETY_TOKENS: 2_048,
   WEB_SEARCH_TIMEOUT_MS: 15_000,
   WEB_SEARCH_MAX_CONTENT_CHARS: 6_000,
+  REMOTE_FETCH_TIMEOUT_MS: 15_000,
+  REMOTE_FETCH_MAX_BYTES: 32_768,
 } as const;
+
+const REMOTE_FETCH_MAX_BYTES_MIN = 1_024;
+const REMOTE_FETCH_MAX_BYTES_MAX = 65_536;
+
+function readBoundedPositiveInt(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new ConfigError(
+      `Environment variable ${name} must be an integer between ${minimum} and ${maximum}; got "${raw}"`,
+    );
+  }
+  return value;
+}
 
 function readPositiveInt(
   env: NodeJS.ProcessEnv,
@@ -302,6 +330,18 @@ export function resolveConfig(input: ResolveConfigInput): AppConfig {
       input.env,
       "WEB_SEARCH_MAX_CONTENT_CHARS",
       NUMERIC_DEFAULTS.WEB_SEARCH_MAX_CONTENT_CHARS,
+    ),
+    remoteFetchTimeoutMs: readPositiveInt(
+      input.env,
+      "REMOTE_FETCH_TIMEOUT_MS",
+      NUMERIC_DEFAULTS.REMOTE_FETCH_TIMEOUT_MS,
+    ),
+    remoteFetchMaxBytes: readBoundedPositiveInt(
+      input.env,
+      "REMOTE_FETCH_MAX_BYTES",
+      NUMERIC_DEFAULTS.REMOTE_FETCH_MAX_BYTES,
+      REMOTE_FETCH_MAX_BYTES_MIN,
+      REMOTE_FETCH_MAX_BYTES_MAX,
     ),
     ...(readPricing(input.env) === undefined
       ? {}

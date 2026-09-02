@@ -148,6 +148,8 @@ function makeConfig(workspaceRoot: string, overrides: Partial<AppConfig> = {}): 
     debug: false,
     webSearchTimeoutMs: 15000,
     webSearchMaxContentChars: 6000,
+    remoteFetchTimeoutMs: 15000,
+    remoteFetchMaxBytes: 32768,
     ...overrides,
   };
 }

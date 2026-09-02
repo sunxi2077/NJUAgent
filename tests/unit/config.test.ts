@@ -64,7 +64,40 @@ describe("loadConfig (compatibility wrapper)", () => {
     expect(config.tavilyApiKey).toBeUndefined();
     expect(config.webSearchTimeoutMs).toBe(15000);
     expect(config.webSearchMaxContentChars).toBe(6000);
+    expect(config.remoteFetchTimeoutMs).toBe(15000);
+    expect(config.remoteFetchMaxBytes).toBe(32768);
   });
+
+  test("remote fetch settings accept valid overrides", () => {
+    const config = loadConfig(
+      {
+        ...validEnv,
+        REMOTE_FETCH_TIMEOUT_MS: "9000",
+        REMOTE_FETCH_MAX_BYTES: "60000",
+      },
+      [],
+    );
+    expect(config.remoteFetchTimeoutMs).toBe(9000);
+    expect(config.remoteFetchMaxBytes).toBe(60000);
+  });
+
+  test.each(["0", "-1", "abc", "1.5"])(
+    "rejects a non-positive-integer REMOTE_FETCH_TIMEOUT_MS: %s",
+    (bad) => {
+      expect(() =>
+        loadConfig({ ...validEnv, REMOTE_FETCH_TIMEOUT_MS: bad }, []),
+      ).toThrow(ConfigError);
+    },
+  );
+
+  test.each(["1023", "65537", "abc", "1.5", "0"])(
+    "rejects out-of-range REMOTE_FETCH_MAX_BYTES: %s",
+    (bad) => {
+      expect(() =>
+        loadConfig({ ...validEnv, REMOTE_FETCH_MAX_BYTES: bad }, []),
+      ).toThrow(/1024.*65536/u);
+    },
+  );
 
   test("web search settings accept overrides and a present key", () => {
     const config = loadConfig(
