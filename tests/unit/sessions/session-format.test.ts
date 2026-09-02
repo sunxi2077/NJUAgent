@@ -59,7 +59,7 @@ describe("formatSessionStatus", () => {
   test("contains model, workspace, permission, skill, message count, and dirty", () => {
     const s = session({
       title: "my session",
-      stats: { turns: 3, toolCalls: 5, lastRunStatus: "completed" },
+      stats: { turns: 3, toolCalls: 5, lastRunStatus: "completed", usage: { requests: 0, inputTokens: 0, outputTokens: 0 } },
       messages: [
         { role: "user", content: [{ type: "text", text: "hi" }] },
         { role: "assistant", content: [{ type: "text", text: "hello" }] },

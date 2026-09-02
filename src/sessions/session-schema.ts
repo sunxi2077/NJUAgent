@@ -24,11 +24,22 @@ export type PersistedSessionV1 = {
     turns: number;
     toolCalls: number;
     lastRunStatus?: RunResult["status"];
+    usage: SessionUsage;
   };
   plan: PlanState;
   goal: GoalState | null;
   evidence: EvidenceState;
 };
+
+export type SessionUsage = {
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+export function createEmptyUsage(): SessionUsage {
+  return { requests: 0, inputTokens: 0, outputTokens: 0 };
+}
 
 export type CreateEmptySessionInput = {
   id: string;
@@ -51,7 +62,7 @@ export function createEmptySession(input: CreateEmptySessionInput): PersistedSes
     activeSkill: null,
     messages: [],
     context: { compactionCount: 0 },
-    stats: { turns: 0, toolCalls: 0 },
+    stats: { turns: 0, toolCalls: 0, usage: createEmptyUsage() },
     plan: { items: [] },
     goal: null,
     evidence: createEmptyEvidenceState(),
@@ -111,8 +122,18 @@ const SESSION_SCHEMA = {
         lastRunStatus: {
           enum: ["completed", "goal_verified", "goal_incomplete", "limit_reached", "context_limit", "cancelled", "model_failed", "internal_failed"],
         },
+        usage: {
+          type: "object",
+          properties: {
+            requests: { type: "integer", minimum: 0 },
+            inputTokens: { type: "integer", minimum: 0 },
+            outputTokens: { type: "integer", minimum: 0 },
+          },
+          required: ["requests", "inputTokens", "outputTokens"],
+          additionalProperties: false,
+        },
       },
-      required: ["turns", "toolCalls"],
+      required: ["turns", "toolCalls", "usage"],
       additionalProperties: false,
     },
     plan: {
@@ -236,8 +257,19 @@ function normalizeSessionCandidate(value: unknown): unknown {
     return value;
   }
   const record = value as Record<string, unknown>;
+  const stats = typeof record.stats === "object" && record.stats !== null
+    ? (record.stats as Record<string, unknown>)
+    : undefined;
   return {
     ...record,
+    ...(stats === undefined
+      ? {}
+      : {
+          stats: {
+            ...stats,
+            usage: stats.usage ?? createEmptyUsage(),
+          },
+        }),
     plan: record.plan ?? { items: [] },
     goal: record.goal ?? null,
     evidence: record.evidence ?? createEmptyEvidenceState(),

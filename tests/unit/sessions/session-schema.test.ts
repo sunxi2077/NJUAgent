@@ -30,7 +30,7 @@ describe("createEmptySession", () => {
       activeSkill: null,
       messages: [],
       context: { compactionCount: 0 },
-      stats: { turns: 0, toolCalls: 0 },
+      stats: { turns: 0, toolCalls: 0, usage: { requests: 0, inputTokens: 0, outputTokens: 0 } },
       plan: { items: [] },
       goal: null,
       evidence: { workspaceRevision: 0, changedPaths: [], commands: [] },
@@ -263,7 +263,7 @@ describe("parseSession", () => {
     ["unknown property", { ...valid, extra: true }],
     ["invalid UUID", { ...valid, id: "not-a-uuid" }],
     ["non-ISO createdAt", { ...valid, createdAt: "yesterday" }],
-    ["negative counter", { ...valid, stats: { turns: -1, toolCalls: 0 } }],
+    ["negative counter", { ...valid, stats: { turns: -1, toolCalls: 0, usage: { requests: 0, inputTokens: 0, outputTokens: 0 } } }],
     [
       "checkpoint covering more messages than exist",
       {
@@ -305,5 +305,50 @@ describe("parseSession", () => {
     expect(error).toMatchObject({ code: "SESSION_CORRUPT" });
     // The diagnostic must not dump the whole session document.
     expect(String(error)).not.toContain("deepseek-v4-flash");
+  });
+});
+
+describe("session usage stats", () => {
+  const usageValid = createEmptySession(baseInput);
+
+  test("new sessions start with zero usage", () => {
+    const session = createEmptySession(baseInput);
+    expect(session.stats.usage).toEqual({ requests: 0, inputTokens: 0, outputTokens: 0 });
+  });
+
+  test("old v1 sessions without stats.usage normalize to zeros", () => {
+    const raw = JSON.parse(JSON.stringify(usageValid)) as Record<string, unknown>;
+    const stats = raw.stats as Record<string, unknown>;
+    delete stats.usage;
+    const parsed = parseSession(raw);
+    expect(parsed.stats.usage).toEqual({ requests: 0, inputTokens: 0, outputTokens: 0 });
+  });
+
+  test.each([
+    ["negative requests", { requests: -1, inputTokens: 0, outputTokens: 0 }],
+    ["non-integer input", { requests: 1, inputTokens: 1.5, outputTokens: 0 }],
+    ["missing output", { requests: 1, inputTokens: 1 }],
+    ["unknown usage field", { requests: 1, inputTokens: 1, outputTokens: 1, extra: 0 }],
+  ])("rejects %s", (_name, usage) => {
+    const bad = {
+      ...usageValid,
+      stats: { ...usageValid.stats, usage },
+    };
+    let error: unknown;
+    try {
+      parseSession(bad);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: "SESSION_CORRUPT" });
+  });
+
+  test("accepted usage values round-trip through parse", () => {
+    const withUsage = {
+      ...usageValid,
+      stats: { ...usageValid.stats, usage: { requests: 7, inputTokens: 2100, outputTokens: 90 } },
+    };
+    const parsed = parseSession(withUsage);
+    expect(parsed.stats.usage).toEqual({ requests: 7, inputTokens: 2100, outputTokens: 90 });
   });
 });

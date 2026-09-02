@@ -413,4 +413,20 @@ describe("SessionManager", () => {
     expect(manager.active().id).toBe(ID);
     expect(initialRuntime.disposed).toBe(false);
   });
+
+  test("usage totals survive checkpoint and resume", async () => {
+    const { manager, store, initialRuntime } = setup();
+    initialRuntime.session.stats.usage = { requests: 5, inputTokens: 100, outputTokens: 20 };
+    await manager.runTurn("task", new AbortController().signal);
+
+    const saved = store.files.get(ID)!;
+    expect(saved.stats.usage).toEqual({ requests: 5, inputTokens: 100, outputTokens: 20 });
+
+    await manager.resume(ID);
+    expect(manager.active().stats.usage).toEqual({
+      requests: 5,
+      inputTokens: 100,
+      outputTokens: 20,
+    });
+  });
 });

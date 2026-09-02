@@ -13,6 +13,7 @@ import type { Renderer } from "../cli/renderer.js";
 import type { AppConfig } from "../config.js";
 import type { ModelProvider } from "../providers/provider.js";
 import { AnthropicProvider } from "../providers/anthropic-provider.js";
+import { UsageTrackingProvider } from "../providers/usage-tracking-provider.js";
 import { PlanManager } from "../planning/plan-manager.js";
 import { createPlanWriteTool } from "../planning/plan-tool.js";
 import { EvidenceLedger } from "../goals/evidence-ledger.js";
@@ -140,13 +141,19 @@ export async function createRuntime(
       deps.renderer.error(error instanceof Error ? error.message : String(error)),
   });
 
-  const provider = deps.provider ??
+  const baseProvider = deps.provider ??
     new AnthropicProvider({
       model: session.modelId,
       maxTokens: deps.config.maxTokens,
       apiKey: deps.config.apiKey,
       baseURL: deps.config.baseURL,
     });
+  // One wrapper counts worker, compaction, and goal-evaluator requests alike.
+  const provider = new UsageTrackingProvider(baseProvider, (usage) => {
+    session.stats.usage.requests += 1;
+    session.stats.usage.inputTokens += usage.inputTokens;
+    session.stats.usage.outputTokens += usage.outputTokens;
+  });
 
   const history = ConversationHistory.from(session.messages);
   let activeSkill: Skill | undefined;
