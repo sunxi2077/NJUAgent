@@ -35,6 +35,16 @@ import {
 } from "../../src/tools/file-tools.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import { toolReference } from "../../src/cli/tool-activity.js";
+import type { AppConfig } from "../../src/config.js";
+import type { Renderer } from "../../src/cli/renderer.js";
+import { createRuntime } from "../../src/runtime/create-runtime.js";
+import { createEmptySession } from "../../src/sessions/session-schema.js";
+import type {
+  RemoteFetchProvider,
+  RemoteFetchRequest,
+  RemoteFetchResult,
+} from "../../src/web/remote-fetch.js";
+
 import {
   createListFilesTool,
   createSearchTextTool,
@@ -540,4 +550,125 @@ describe("tool card and /tool inspector end-to-end", () => {
     },
     20_000,
   );
+});
+
+describe("fetch_url permission integration", () => {
+  function fetchConfig(workspaceRoot: string, permissionMode: "balanced" | "trusted"): AppConfig {
+    return {
+      apiKey: "test-key",
+      baseURL: "https://api.example.com/anthropic",
+      model: "deepseek-v4-flash",
+      maxTokens: 512,
+      maxSteps: 4,
+      commandTimeoutMs: 5000,
+      toolOutputMaxBytes: 8192,
+      uiOutputMaxBytes: 65536,
+      contextWindowTokens: 48000,
+      contextCompactRatio: 0.7,
+      contextRecentMessages: 12,
+      contextSafetyTokens: 2048,
+      workspaceRoot,
+      permissionMode,
+      debug: false,
+      webSearchTimeoutMs: 15000,
+      webSearchMaxContentChars: 6000,
+      remoteFetchTimeoutMs: 15000,
+      remoteFetchMaxBytes: 32768,
+    };
+  }
+
+  class CountingConfirm {
+    confirmCalls = 0;
+    async confirm(): Promise<boolean> {
+      this.confirmCalls += 1;
+      return true;
+    }
+  }
+
+  class PermissionRenderer implements Renderer {
+    permissionRequests = 0;
+    permissionRequest(): void {
+      this.permissionRequests += 1;
+    }
+    permissionDecision(): void {}
+    handle(): void {}
+    toolOutput(): void {}
+    print(): void {}
+    error(): void {}
+  }
+
+  class FakeRemoteFetch implements RemoteFetchProvider {
+    calls = 0;
+    async fetch(request: RemoteFetchRequest): Promise<RemoteFetchResult> {
+      this.calls += 1;
+      return {
+        sourceUrl: request.url,
+        finalUrl: request.url,
+        contentType: "text/markdown",
+        text: "# Fetched",
+      };
+    }
+  }
+
+  async function runFetch(mode: "balanced" | "trusted") {
+    const tempDir = await makeTempWorkspace();
+    const provider = new ScriptedProvider([
+      [
+        complete(toolAssistant([
+          {
+            id: "f1",
+            name: "fetch_url",
+            input: { url: "https://example.com/guide.md" },
+          },
+        ])),
+      ],
+      [
+        { type: "text_delta", text: "Fetched." },
+        complete(textAssistant("Fetched.")),
+      ],
+    ]);
+    const prompt = new CountingConfirm();
+    const renderer = new PermissionRenderer();
+    const remoteFetch = new FakeRemoteFetch();
+    const session = createEmptySession({
+      id: crypto.randomUUID(),
+      now: new Date().toISOString(),
+      workspaceRoot: tempDir,
+      modelId: "deepseek-v4-flash",
+      permissionMode: mode,
+    });
+    const runtime = await createRuntime(session, {
+      env: {},
+      config: fetchConfig(tempDir, mode),
+      prompt,
+      renderer,
+      provider,
+      remoteFetchProvider: remoteFetch,
+    });
+    const result = await runtime.run("fetch it", new AbortController().signal);
+    return { result, prompt, renderer, remoteFetch, provider };
+  }
+
+  test("balanced mode asks exactly one confirmation before fetch_url", async () => {
+    const { result, prompt, renderer, remoteFetch, provider } = await runFetch("balanced");
+    expect(result.status).toBe("completed");
+    expect(prompt.confirmCalls).toBe(1);
+    expect(renderer.permissionRequests).toBe(1);
+    expect(remoteFetch.calls).toBe(1);
+    // The untrusted wrapper reached the transcript inside the tool result.
+    const tools = provider.requests[1]!.messages.filter(
+      (message) => message.role === "user",
+    );
+    const transcript = JSON.stringify(tools);
+    expect(transcript).toContain("<untrusted_remote_text");
+    expect(transcript).toContain("# Fetched");
+  });
+
+  test("trusted mode runs fetch_url with no confirmation", async () => {
+    const { result, prompt, renderer, remoteFetch } = await runFetch("trusted");
+    expect(result.status).toBe("completed");
+    expect(prompt.confirmCalls).toBe(0);
+    expect(renderer.permissionRequests).toBe(0);
+    expect(remoteFetch.calls).toBe(1);
+  });
 });

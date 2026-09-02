@@ -6,8 +6,20 @@ import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 
 import type { Prompt, ReadlinePromptOptions } from "../../src/cli/prompt.js";
-import { TerminalRenderer, type TerminalRendererOptions } from "../../src/cli/renderer.js";
+import {
+  TerminalRenderer,
+  type Renderer,
+  type TerminalRendererOptions,
+} from "../../src/cli/renderer.js";
+import type { AppConfig } from "../../src/config.js";
 import { isDirectRun, main, type BootstrapDeps } from "../../src/index.js";
+import type {
+  ModelProvider,
+  ModelRequest,
+  ProviderEvent,
+} from "../../src/providers/provider.js";
+import { createRuntime } from "../../src/runtime/create-runtime.js";
+import { createEmptySession } from "../../src/sessions/session-schema.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -68,6 +80,52 @@ class FakePrompt implements Prompt {
   close(): void {
     this.closeCalls += 1;
   }
+}
+
+class NoopRenderer implements Renderer {
+  permissionRequest(): void {}
+  permissionDecision(): void {}
+  handle(): void {}
+  toolOutput(): void {}
+  print(): void {}
+  error(): void {}
+}
+
+class RecordingModelProvider implements ModelProvider {
+  readonly requests: ModelRequest[] = [];
+
+  async *stream(request: ModelRequest): AsyncIterable<ProviderEvent> {
+    this.requests.push(structuredClone(request));
+    yield {
+      type: "message_completed",
+      message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
+      stopReason: "end_turn",
+    };
+  }
+}
+
+function runtimeConfig(workspaceRoot: string): AppConfig {
+  return {
+    apiKey: "test-key",
+    baseURL: "https://api.example.com/anthropic",
+    model: "deepseek-v4-flash",
+    maxTokens: 512,
+    maxSteps: 4,
+    commandTimeoutMs: 5000,
+    toolOutputMaxBytes: 8192,
+    uiOutputMaxBytes: 65536,
+    contextWindowTokens: 48000,
+    contextCompactRatio: 0.7,
+    contextRecentMessages: 12,
+    contextSafetyTokens: 2048,
+    workspaceRoot,
+    permissionMode: "balanced",
+    debug: false,
+    webSearchTimeoutMs: 15000,
+    webSearchMaxContentChars: 6000,
+    remoteFetchTimeoutMs: 15000,
+    remoteFetchMaxBytes: 32768,
+  };
 }
 
 type Overrides = Partial<Omit<BootstrapDeps, "env" | "argv" | "stdout" | "stderr">> & {
@@ -284,5 +342,36 @@ describe("bootstrap", () => {
     expect(promptOptions[0]!.theme?.enabled).toBe(promptOptions[0]!.enhanced);
     // Columns come from stdout; MemoryWriter has none, so it must stay unset.
     expect(promptOptions[0]!.columns).toBeUndefined();
+  });
+
+  test("runtime registers fetch_url without TAVILY_API_KEY and omits web_search", async () => {
+    const { workspaceDir } = await makeDeps({});
+    const session = createEmptySession({
+      id: crypto.randomUUID(),
+      now: new Date().toISOString(),
+      workspaceRoot: workspaceDir,
+      modelId: "deepseek-v4-flash",
+      permissionMode: "balanced",
+    });
+    const provider = new RecordingModelProvider();
+    const runtime = await createRuntime(session, {
+      env: {},
+      config: runtimeConfig(workspaceDir),
+      prompt: new FakePrompt(),
+      renderer: new NoopRenderer(),
+      provider,
+    });
+    await runtime.run("hello", new AbortController().signal);
+
+    const toolNames = provider.requests[0]!.tools.map((tool) => tool.name);
+    expect(toolNames).toContain("fetch_url");
+    expect(toolNames).not.toContain("web_search");
+    const fetchDefinition = provider.requests[0]!.tools.find(
+      (tool) => tool.name === "fetch_url",
+    );
+    const schema = fetchDefinition?.inputSchema as
+      | { required?: string[] }
+      | undefined;
+    expect(schema?.required).toEqual(["url"]);
   });
 });
